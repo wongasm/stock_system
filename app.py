@@ -67,6 +67,12 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
+@app.context_processor
+def inject_base_template():
+    if current_user.is_authenticated and getattr(current_user, "role", None) == "user":
+        return {"base_template": "user_navbar.html"}
+    return {"base_template": "navbar.html"}
+
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
