@@ -1,0 +1,135 @@
+{% extends "navbar.html" %}
+
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">📋 Stock Take Records</h2>
+    </div>
+
+
+    <!-- FILTER CARD -->
+    <div class="card app-card mx-3 mb-4 p-4">
+
+        <h5 class="fw-bold mb-3">Filter Records</h5>
+
+        <form method="GET" action="{{ url_for('admin_stocktake') }}" class="row g-3 align-items-end">
+
+            <!-- Date -->
+            <div class="col-md-4 col-12">
+                <label class="form-label small-text fw-semibold">Select Date</label>
+                <input type="date" name="date" class="form-control"
+                       value="{{ selected_date }}">
+            </div>
+
+            <!-- Store -->
+            <div class="col-md-4 col-12">
+                <label class="form-label small-text fw-semibold">Select Store</label>
+                <select name="store" class="form-select">
+                    <option value="all">All Stores</option>
+                    {% for store in stores %}
+                        <option value="{{ store.id }}"
+                                {% if store.id|string == selected_store %}selected{% endif %}>
+                            {{ store.username }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Filter Button -->
+            <div class="col-md-4 col-12">
+                <button type="submit" class="btn app-btn-primary w-100">
+                    Apply Filter
+                </button>
+            </div>
+
+        </form>
+    </div>
+
+
+    <!-- RESULTS TABLE -->
+    <div class="card app-card mx-3 mb-5 p-4">
+
+        <h5 class="fw-bold mb-3">Stocktake Records</h5>
+
+        <div class="table-responsive app-table-container" style="max-height: 70vh; overflow-y: auto;">
+            <table class="table app-table table-bordered align-middle mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Date Recorded</th>
+                        <th>Store</th>
+                        <th>Ingredient</th>
+                        <th>Quantity</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for stock in stocktakes %}
+                    <tr>
+                        <td>{{ stock.date_recorded.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td class="fw-semibold">{{ stock.store_name }}</td>
+                        <td>{{ stock.ingredient_name }}</td>
+                        <td>{{ stock.quantity_on_hand }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+
+            </table>
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- STYLES -->
+<style>
+    body {
+        background: #F5F7FA;
+        font-family: Inter, -apple-system, BlinkMacSystemFont;
+    }
+
+    .app-card {
+        border-radius: 18px;
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.05);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+    }
+
+    .app-btn-primary {
+        background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
+        color: white !important;
+        border-radius: 12px !important;
+        padding: 10px !important;
+        font-weight: 600 !important;
+    }
+
+    .small-text {
+        font-size: 0.85rem;
+        color: #6B7280;
+    }
+
+    .app-table-container {
+        border-radius: 14px;
+        overflow: hidden;
+        border: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .app-thead {
+        background: #111827 !important;
+        color: white !important;
+    }
+
+    .app-table tbody tr {
+        background: white;
+    }
+
+    .app-table td, .app-table th {
+        vertical-align: middle !important;
+        text-align: center;
+    }
+</style>
+
+{% endblock %}

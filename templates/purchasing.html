@@ -1,0 +1,201 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">Purchasing Records</h2>
+    </div>
+
+    <!-- TOTAL SPEND CARD -->
+    <div class="mx-3 mb-4">
+        <div class="p-3 bg-white app-card d-flex justify-content-between align-items-center">
+            <div class="fw-bold fs-5">💸 Total Spend</div>
+            <div class="fw-bold text-success fs-4">${{ '%.2f'|format(total_spend) }}</div>
+        </div>
+    </div>
+
+    <!-- FILTER CARD -->
+    <div class="card app-card mx-3 mb-4 p-4">
+        <h5 class="fw-bold mb-3">Filter Purchases</h5>
+
+        <form method="get" class="row g-3">
+
+            <div class="col-md-4 col-12">
+                <label class="form-label small-text fw-semibold">Start Date</label>
+                <input type="date" id="start_date" name="start_date"
+                       value="{{ start_date or '' }}" class="form-control">
+            </div>
+
+            <div class="col-md-4 col-12">
+                <label class="form-label small-text fw-semibold">End Date</label>
+                <input type="date" id="end_date" name="end_date"
+                       value="{{ end_date or '' }}" class="form-control">
+            </div>
+
+            <div class="col-md-2 col-6">
+                <button type="submit" class="btn app-btn-primary w-100">Apply</button>
+            </div>
+
+            <div class="col-md-2 col-6">
+                <a href="{{ url_for('purchasing') }}" class="btn app-btn-secondary w-100">Clear</a>
+            </div>
+
+        </form>
+    </div>
+
+    <!-- RESULTS -->
+    {% if grouped_data %}
+
+        <!-- MOBILE CARD VIEW -->
+        <div class="d-md-none mx-3">
+            {% for date, data in grouped_data.items() %}
+            <div class="purchase-card app-card mb-3 p-3" onclick="togglePurchaseCard(this)">
+
+                <!-- HEADER -->
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <div class="fw-bold">{{ date }}</div>
+                        <div class="small-text text-muted">Total spend for day</div>
+                    </div>
+                    <div class="fw-bold text-success fs-5">${{ '%.2f'|format(data.total) }}</div>
+                </div>
+
+                <!-- COLLAPSIBLE DETAILS -->
+                <div class="purchase-details mt-3" style="display:none;">
+                    {% for item in data["items"] %}
+                    <div class="border-bottom py-2 d-flex justify-content-between">
+                        <div>
+                            <div class="fw-semibold">{{ item.ingredient }}</div>
+                            <div class="small-text">
+                                Qty: {{ item.quantity }} • {{ item.supplier }}
+                            </div>
+                        </div>
+
+                        <div class="text-end">
+                            <div class="small-text">${{ '%.2f'|format(item.price_per_unit) }}/unit</div>
+                            <div class="fw-bold text-success">
+                                ${{ '%.2f'|format(item.total_price) }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- DESKTOP TABLE VIEW -->
+        <div class="card app-card d-none d-md-block mx-3 mb-5 p-4">
+
+            <h5 class="fw-bold mb-3">Daily Purchases</h5>
+
+            {% for date, data in grouped_data.items() %}
+            <div class="mb-4">
+
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="fw-bold">{{ date }}</h6>
+                    <div class="fw-bold text-success">Total: ${{ '%.2f'|format(data.total) }}</div>
+                </div>
+
+                <div class="table-responsive mb-4">
+                    <table class="table app-table table-hover">
+                        <thead class="app-thead">
+                            <tr>
+                                <th>Ingredient</th>
+                                <th>Quantity</th>
+                                <th>Supplier</th>
+                                <th>Price/Unit</th>
+                                <th>Total Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in data["items"] %}
+                            <tr>
+                                <td>{{ item.ingredient }}</td>
+                                <td>{{ item.quantity }}</td>
+                                <td>{{ item.supplier }}</td>
+                                <td>${{ '%.2f'|format(item.price_per_unit) }}</td>
+                                <td class="fw-bold text-success">
+                                    ${{ '%.2f'|format(item.total_price) }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+            {% endfor %}
+        </div>
+
+    {% else %}
+
+        <div class="alert alert-info mx-3 mb-5">
+            No purchasing records found for the selected date range.
+        </div>
+
+    {% endif %}
+
+</div>
+
+<!-- JS -->
+<script>
+function togglePurchaseCard(card) {
+    let details = card.querySelector(".purchase-details");
+    details.style.display = details.style.display === "none" ? "block" : "none";
+}
+</script>
+
+<!-- CSS -->
+<style>
+.purchase-card {
+    cursor: pointer;
+    transition: 0.25s ease;
+}
+.purchase-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08) !important;
+}
+.purchase-details {
+    animation: fadeIn .3s ease;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Reuse app styles */
+.app-card {
+    border-radius: 18px;
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+}
+.app-thead {
+    background: #111827 !important;
+    color: white !important;
+}
+.small-text {
+    font-size: 0.85rem;
+    color: #6B7280;
+}
+
+.app-btn-primary {
+    background: linear-gradient(135deg,#6366F1,#4F46E5) !important;
+    color: #fff !important;
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+}
+
+.app-btn-secondary {
+    background: #EEF1F5 !important;
+    color: #374151 !important;
+    border-radius: 12px !important;
+    font-weight: 600 !important;
+}
+</style>
+
+{% endblock %}

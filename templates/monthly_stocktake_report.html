@@ -1,0 +1,104 @@
+{% extends "navbar.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-3">Stocktake Variance Report</h2>
+
+    <!-- Date Range Selector -->
+    <form method="get" class="mb-4 row g-3">
+        <div class="col-md-4">
+            <label class="form-label">Start Date</label>
+            <input
+                type="date"
+                name="start_date"
+                class="form-control"
+                value="{{ start_date }}"
+            >
+        </div>
+        <div class="col-md-4">
+            <label class="form-label">End Date</label>
+            <input
+                type="date"
+                name="end_date"
+                class="form-control"
+                value="{{ end_date }}"
+            >
+        </div>
+        <div class="col-md-4 d-flex align-items-end">
+            <button class="btn btn-primary w-100">
+                Apply
+            </button>
+        </div>
+    </form>
+
+    {% if records %}
+    <!-- Summary -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="alert alert-success">
+                <strong>Total Gain</strong><br>
+                ${{ "%.2f"|format(total_gain) }}
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="alert alert-danger">
+                <strong>Total Loss</strong><br>
+                ${{ "%.2f"|format(total_loss) }}
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="alert alert-secondary">
+                <strong>Net Variance</strong><br>
+                ${{ "%.2f"|format(net_variance) }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Variance Table -->
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Date</th>
+                    <th>Ingredient</th>
+                    <th>Previous Qty</th>
+                    <th>Counted Qty</th>
+                    <th>Variance (Qty)</th>
+                    <th>Cost / Unit</th>
+                    <th>Variance ($)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in records %}
+                <tr>
+                    <td>{{ r.stocktake_date.strftime("%Y-%m-%d") }}</td>
+                    <td>{{ r.ingredient.name }}</td>
+                    <td>{{ r.previous_quantity }}</td>
+                    <td>{{ r.counted_quantity }}</td>
+                    <td class="
+                        {% if r.variance_quantity > 0 %}text-success
+                        {% elif r.variance_quantity < 0 %}text-danger
+                        {% else %}text-muted{% endif %}
+                    ">
+                        {{ "+" if r.variance_quantity > 0 else "" }}{{ r.variance_quantity }}
+                    </td>
+                    <td>${{ "%.2f"|format(r.price_per_unit) }}</td>
+                    <td class="
+                        fw-bold
+                        {% if r.variance_value > 0 %}text-success
+                        {% elif r.variance_value < 0 %}text-danger{% endif %}
+                    ">
+                        ${{ "%.2f"|format(r.variance_value) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+        <div class="alert alert-info">
+            No stocktake data found for the selected date range.
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

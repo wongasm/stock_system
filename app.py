@@ -1,0 +1,2653 @@
+from models import db, Ingredient, Supplier, Category, StockOutRecord, Recipe, RecipeIngredient, User, Stocktake, StoreThreshold, MonthlyStocktake, Invoice, WeeklyStocktake, StockInRecord
+from datetime import datetime, timedelta, timezone
+from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, send_file, session
+import json
+from fpdf import FPDF
+import os
+from math import ceil
+from decimal import Decimal, InvalidOperation
+from itertools import groupby
+from collections import defaultdict
+from sqlalchemy.sql import text, func
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+from forms import LoginForm
+from flask_migrate import Migrate
+from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.exc import SQLAlchemyError, OperationalError, IntegrityError
+from sqlalchemy import cast, Numeric
+from flask_mail import Mail, Message
+from dotenv import load_dotenv
+from square_api import fetch_sales_for_store
+from pathlib import Path
+from square_helpers import ITEM_CATEGORY_MAP
+from freezer_pack_helpers import calculate_ingredients_for_freezer_pack
+import traceback
+
+# ⛑ Force .env from current file directory
+env_path = Path(__file__).parent / ".env"
+load_dotenv(dotenv_path=env_path)
+
+load_dotenv()
+
+print("✅ TEST: .env ACCESS")
+print("DONCASTER_ACCESS_TOKEN:", os.getenv("DONCASTER_ACCESS_TOKEN"))
+print("GLEN_WAVERLEY_ACCESS_TOKEN:", os.getenv("GLEN_WAVERLEY_ACCESS_TOKEN"))
+
+app = Flask(__name__)
+app.secret_key = "hellohello.1"
+
+# Database Configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = "mysql://wongasm2:Hellohello.1@wongasm2.mysql.pythonanywhere-services.com/wongasm2$stock_system"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    "pool_pre_ping": True,
+    "pool_recycle": 280
+}
+
+
+# Initialize database
+db.init_app(app)
+db = SQLAlchemy(app)
+migrate = Migrate(app, db)
+
+app.config["MAIL_SERVER"] = "smtp.gmail.com"  # Change for other providers (Outlook, Yahoo, etc.)
+app.config["MAIL_PORT"] = 587  # Common for TLS
+app.config["MAIL_USE_TLS"] = True
+app.config["MAIL_USE_SSL"] = False
+app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME")  # Store in environment variables
+app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD")  # Store securely
+app.config["MAIL_DEFAULT_SENDER"] = os.getenv("MAIL_DEFAULT_SENDER")  # Default "From" email
+
+mail = Mail(app)
+
+print(f"🔍 Flask Database URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
+
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# Create tables
+with app.app_context():
+    db.create_all()
+
+@app.route("/", methods=["GET", "POST"])
+@login_required
+def index():
+    filter_by = request.args.get("filter_by")
+    filter_value = request.args.get("filter_value")
+
+    # ✅ EXCLUDE ARCHIVED INGREDIENTS BY DEFAULT
+    query = Ingredient.query.filter(Ingredient.is_archived == False)
+
+    # ✅ Apply filters
+    if filter_by == "supplier" and filter_value:
+        query = query.filter(Ingredient.supplier == filter_value)
+    elif filter_by == "category" and filter_value:
+        query = query.filter(Ingredient.category == filter_value)
+
+    ingredients = query.all()
+
+    suppliers = Supplier.query.all()
+    categories = Category.query.all()
+
+    # 🔢 Total stock value (active ingredients only)
+    total_stock_value = sum(
+        Decimal(ingredient.quantity or 0) * Decimal(ingredient.price_per_unit or 0)
+        for ingredient in ingredients
+    )
+
+    return render_template(
+        "index.html",
+        ingredients=ingredients,
+        suppliers=suppliers,
+        categories=categories,
+        total_stock_value=round(total_stock_value, 2)
+    )
+
+
+# 🟢 Route: Add an ingredient (POST request)
+@app.route("/add", methods=["POST"])
+@login_required
+def add_ingredient():
+    name = request.form.get("name")
+    quantity = request.form.get("quantity")
+    unit = request.form.get("unit")
+    supplier = request.form.get("supplier")
+    category = request.form.get("category")
+    grams_per_unit = request.form.get("grams_per_unit")
+    threshold = request.form.get("threshold")
+    price_per_unit = request.form.get("price_per_unit")
+    selling_price = request.form.get("selling_price")
+    daily_stocktake = request.form.get("daily_stocktake")
+
+
+    daily_stocktake = True if daily_stocktake == "1" else False
+    weekly_stocktake = True if request.form.get("weekly_stocktake") == "1" else False  # ✅ Capture weekly stocktake
+
+
+    if name and quantity and unit:
+        new_ingredient = Ingredient(
+            name=name,
+            quantity=int(quantity),
+            unit=unit,
+            supplier=supplier,
+            category=category,
+            grams_per_unit=float(grams_per_unit) if grams_per_unit else None,
+            threshold=int(threshold) if threshold else None,
+            price_per_unit=float(price_per_unit) if price_per_unit else None,
+            selling_price=float(selling_price) if selling_price else None,
+            daily_stocktake=daily_stocktake,
+            weekly_stocktake=weekly_stocktake
+        )
+        db.session.add(new_ingredient)
+        db.session.commit()
+
+    return redirect(url_for("index"))
+
+@app.route("/archive/<int:id>", methods=["POST"])
+@login_required
+def archive_ingredient(id):
+    ingredient = db.session.get(Ingredient, id)
+
+    if not ingredient:
+        flash("Ingredient not found.", "danger")
+        return redirect(url_for("index"))
+
+    try:
+        ingredient.is_archived = True
+        db.session.commit()
+
+        print(f"📦 ARCHIVED INGREDIENT → ID={ingredient.id}, Name={ingredient.name}")
+
+        flash(f"'{ingredient.name}' archived successfully.", "success")
+
+    except Exception as e:
+        db.session.rollback()
+        print("❌ Error archiving ingredient:", e)
+        flash(f"Error archiving ingredient: {str(e)}", "danger")
+
+    return redirect(url_for("index"))
+
+# 🟢 Route: Show the Add Ingredient Page (GET request)
+@app.route("/add_ingredient", methods=["GET", "POST"])
+@login_required
+def add_ingredient_page():
+    suppliers = Supplier.query.all()  # ✅ Fetch suppliers from the database
+    categories = Category.query.all()  # Fetch categories
+    return render_template("add_ingredient.html", suppliers=suppliers, categories=categories, ingredient=None)
+
+# 🟢 Route: Edit an ingredient (Display Edit Form)
+@app.route("/edit/<int:id>", methods=["GET"])
+@login_required
+def edit_ingredient(id):
+    ingredient = Ingredient.query.get(id)
+    suppliers = Supplier.query.all()  # ✅ Fetch suppliers for dropdown
+    categories = Category.query.all()  # Fetch categories
+    return render_template("edit.html", ingredient=ingredient, suppliers=suppliers, categories=categories)
+
+@app.route("/update/<int:id>", methods=["POST"])
+@login_required
+def update_ingredient(id):
+    from decimal import Decimal
+
+    # 🔧 Load object into the correct session
+    ingredient = db.session.merge(Ingredient.query.get(id))
+
+    if not ingredient:
+        flash("❌ Ingredient not found.", "danger")
+        return redirect(url_for("index"))
+
+    try:
+        # ✅ Form parsing and type conversion
+        ingredient.name = request.form.get("name")
+        ingredient.quantity = float(request.form.get("quantity", 0))
+        ingredient.unit = request.form.get("unit")
+        ingredient.supplier = request.form.get("supplier")
+        ingredient.category = request.form.get("category")
+        ingredient.grams_per_unit = float(request.form.get("grams_per_unit", 0))
+        ingredient.threshold = float(request.form.get("threshold", 0))
+        ingredient.price_per_unit = float(request.form.get("price_per_unit", 0))
+        ingredient.selling_price = float(request.form.get("selling_price", 0))
+
+        # ✅ Booleans
+        ingredient.daily_stocktake = request.form.get("daily_stocktake") == "1"
+        ingredient.weekly_stocktake = request.form.get("weekly_stocktake") == "1"
+
+        # ✅ Save and commit
+        db.session.add(ingredient)
+        db.session.commit()
+        flash("✅ Ingredient updated successfully!", "success")
+
+    except Exception as e:
+        db.session.rollback()
+        print("❌ Error updating ingredient:", str(e))
+        flash("❌ Failed to update ingredient.", "danger")
+
+    return redirect(url_for("index"))
+
+# 🟢 Route: Manage Suppliers
+@app.route("/suppliers", methods=["GET", "POST"])
+@login_required
+def manage_suppliers():
+    if request.method == "POST":
+        name = request.form.get("name")
+        if name:
+            new_supplier = Supplier(name=name)
+            db.session.add(new_supplier)
+            db.session.commit()
+
+    suppliers = Supplier.query.all()  # Retrieve all suppliers
+    return render_template("suppliers.html", suppliers=suppliers)
+
+@app.route("/edit_supplier/<int:id>", methods=["GET", "POST"])
+@login_required
+def edit_supplier(id):
+    supplier = Supplier.query.get(id)
+
+    if request.method == "POST":
+        new_name = request.form.get("name")
+        if supplier and new_name:
+            supplier.name = new_name
+            db.session.commit()
+            return redirect(url_for("manage_suppliers"))
+
+    return render_template("edit_supplier.html", supplier=supplier)
+
+@app.route("/delete_supplier/<int:id>", methods=["GET"])
+@login_required
+def delete_supplier(id):
+    supplier = Supplier.query.get(id)
+    if supplier:
+        db.session.delete(supplier)
+        db.session.commit()
+
+    return redirect(url_for("manage_suppliers"))
+
+@app.route("/categories", methods=["GET", "POST"])
+@login_required
+def manage_categories():
+    if request.method == "POST":
+        name = request.form.get("name")
+        if name:
+            new_category = Category(name=name)
+            db.session.add(new_category)
+            db.session.commit()
+            return redirect(url_for("manage_categories"))
+
+    categories = Category.query.all()  # Fetch all categories
+    return render_template("categories.html", categories=categories)
+
+@app.route("/edit_category/<int:id>", methods=["GET", "POST"])
+@login_required
+def edit_category(id):
+    category = Category.query.get(id)
+
+    if request.method == "POST":
+        new_name = request.form.get("name")
+        if category and new_name:
+            category.name = new_name
+            db.session.commit()
+            return redirect(url_for("manage_categories"))
+
+    return render_template("edit_category.html", category=category)
+
+@app.route("/delete_category/<int:id>", methods=["GET"])
+@login_required
+def delete_category(id):
+    category = Category.query.get(id)
+    if category:
+        db.session.delete(category)
+        db.session.commit()
+    return redirect(url_for("manage_categories"))
+
+@app.route("/stock_in", methods=["GET", "POST"])
+@login_required
+def stock_in():
+    try:
+        supplier_filter = request.args.get("supplier")
+
+        if supplier_filter:
+            ingredients = Ingredient.query.filter(Ingredient.supplier == supplier_filter).order_by(Ingredient.name).all()
+        else:
+            ingredients = Ingredient.query.order_by(Ingredient.name).all()
+
+        suppliers = Supplier.query.order_by(Supplier.name).all()
+
+        if request.method == "POST":
+            ingredient_id = request.form.get("ingredient_id")
+            stock_added_raw = request.form.get("stock_added")
+
+            ingredient = Ingredient.query.get(ingredient_id)
+            if not ingredient:
+                return jsonify({"success": False, "error": "Ingredient not found."})
+
+            # ✅ Convert input to Decimal
+            stock_added = Decimal(str(stock_added_raw))
+
+            # ✅ Update ingredient quantity
+            ingredient.quantity += stock_added
+
+            # ✅ Calculate price and total cost (safely using Decimal)
+            raw_price = ingredient.price_per_unit or 0
+            price = Decimal(str(raw_price))
+            total_cost = price * stock_added
+
+            # ✅ Create StockInRecord entry
+            record = StockInRecord(
+                date=datetime.utcnow(),
+                supplier=ingredient.supplier,
+                item=ingredient.name,
+                price=price,
+                quantity=stock_added,
+                total_cost=total_cost
+            )
+
+            # ✅ Merge and commit to handle session properly
+            db.session.merge(ingredient)
+            db.session.add(record)
+            db.session.commit()
+
+            return jsonify({"success": True, "new_quantity": float(ingredient.quantity)})
+
+        return render_template("stock_in.html", ingredients=ingredients, suppliers=suppliers, supplier_filter=supplier_filter)
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": "Unexpected error occurred."})
+
+@app.route("/stock_out", methods=["GET", "POST"])
+@login_required
+def stock_out():
+    supplier_filter = request.args.get("supplier")
+
+    # ✅ Get filtered ingredients (alphabetically ordered)
+    if supplier_filter:
+        ingredients = Ingredient.query.filter(Ingredient.supplier == supplier_filter).order_by(Ingredient.name).all()
+    else:
+        ingredients = Ingredient.query.order_by(Ingredient.name).all()
+
+    suppliers = Supplier.query.all()
+
+    # ✅ Live Stock Dictionary for JS
+    current_stock = {str(ing.id): float(ing.quantity) for ing in ingredients}
+
+    # ✅ Load weekly stocktake items from session (if present)
+    prefilled_stockout_items = session.pop("prefilled_stock_out", None)
+    if prefilled_stockout_items:
+        print("📦 Prefilled items from session:", prefilled_stockout_items)
+
+    if request.method == "POST":
+        if request.is_json:
+            data = request.get_json()
+            stock_out_items = data.get("stockOutItems", [])
+
+            print("📥 Received Stock Out POST:", stock_out_items)
+
+            if not stock_out_items:
+                print("⚠️ No items submitted in stockOutItems.")
+                return jsonify({"success": False, "message": "No items to process."})
+
+            # ✅ Generate next invoice number
+            last_invoice = db.session.query(db.func.max(StockOutRecord.invoice_no)).scalar()
+            invoice_no = last_invoice + 1 if last_invoice else 1000
+
+            for item in stock_out_items:
+                try:
+                    ingredient_id = item.get("ingredientId")
+                    stock_removed = Decimal(item.get("stockRemoved", "0"))
+
+                    if not ingredient_id:
+                        return jsonify({"success": False, "message": "Missing ingredient ID in item."})
+
+                    ingredient = Ingredient.query.get(ingredient_id)
+                    if not ingredient:
+                        return jsonify({"success": False, "message": f"Ingredient not found for ID {ingredient_id}."})
+
+                    # Merge ingredient into session
+                    ingredient = db.session.merge(ingredient)
+
+                    if ingredient.quantity < stock_removed:
+                        return jsonify({"success": False, "message": f"Not enough stock for {ingredient.name}."})
+
+                    ingredient.quantity -= stock_removed
+
+                    record = StockOutRecord(
+                        invoice_no=invoice_no,
+                        date=item.get("stockDate"),
+                        store=item.get("store"),
+                        item=ingredient.name,
+                        price=ingredient.price_per_unit or ingredient.price or Decimal(0),
+                        selling_price=ingredient.selling_price or Decimal(0),
+                        quantity=stock_removed
+                    )
+                    db.session.add(record)
+
+                except Exception as e:
+                    print(f"❌ Error processing item {item}: {e}")
+                    db.session.rollback()
+                    return jsonify({"success": False, "message": f"Error processing item: {e}"})
+
+            db.session.commit()
+
+            # ✅ Return updated stock
+            updated_stock = {
+                str(item["ingredientId"]): float(Ingredient.query.get(item["ingredientId"]).quantity)
+                for item in stock_out_items
+            }
+
+            return jsonify({
+                "success": True,
+                "invoice_no": invoice_no,
+                "updatedStock": updated_stock
+            })
+
+        print("❌ Invalid request type — expected JSON.")
+        return jsonify({"success": False, "message": "Invalid request."})
+
+    return render_template(
+        "stock_out.html",
+        ingredients=ingredients,
+        suppliers=suppliers,
+        supplier_filter=supplier_filter,
+        current_stock=current_stock,
+        prefilled_stockout_items=prefilled_stockout_items  # ✅ used in frontend JS
+    )
+
+@app.route("/stock_out_history", methods=["GET"])
+@login_required
+def stock_out_history():
+    store = request.args.get("store")
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+
+    query = StockOutRecord.query
+
+    if store:
+        query = query.filter(StockOutRecord.store == store)
+    if start_date:
+        query = query.filter(StockOutRecord.date >= start_date)
+    if end_date:
+        query = query.filter(StockOutRecord.date <= end_date)
+
+    stock_out_records = query.order_by(StockOutRecord.invoice_no.desc()).all()
+
+    from decimal import Decimal
+
+    def safe_decimal(v):
+        try:
+            return Decimal(str(v or 0))
+        except:
+            return Decimal(0)
+
+    # -----------------------------
+    # ✅ GROUP BY INVOICE NUMBER
+    # -----------------------------
+    invoices = {}
+
+    for r in stock_out_records:
+        invoice_no = r.invoice_no
+
+        if invoice_no not in invoices:
+            invoices[invoice_no] = {
+                "invoice_no": invoice_no,
+                "date": r.date,
+                "store": r.store,
+                "items": [],
+                "total_cost": Decimal(0),
+                "total_selling": Decimal(0),
+            }
+
+        item_cost = safe_decimal(r.price) * safe_decimal(r.quantity)
+        item_selling = safe_decimal(r.selling_price) * safe_decimal(r.quantity)
+
+        # Add line item
+        invoices[invoice_no]["items"].append({
+            "item": r.item,
+            "quantity": r.quantity,
+            "price": r.price,
+            "selling_price": r.selling_price,
+            "total_cost": item_cost,
+            "total_selling": item_selling,
+        })
+
+        # Update totals
+        invoices[invoice_no]["total_cost"] += item_cost
+        invoices[invoice_no]["total_selling"] += item_selling
+
+    # Convert dict → list sorted by invoice_no descending
+    invoice_list = sorted(
+        invoices.values(),
+        key=lambda x: x["invoice_no"],
+        reverse=True
+    )
+
+    # Overall totals
+    total_cost_value = sum(inv["total_cost"] for inv in invoice_list)
+    total_selling_value = sum(inv["total_selling"] for inv in invoice_list)
+
+    return render_template(
+        "stock_out_history.html",
+        invoices=invoice_list,              # ← NEW DATA
+        total_cost_value=round(total_cost_value, 2),
+        total_selling_value=round(total_selling_value, 2),
+        selected_store=store,
+        start_date=start_date,
+        end_date=end_date
+    )
+
+@app.route("/invoices")
+@login_required
+def invoice_page():
+    """Display buttons for each store."""
+    return render_template("invoices.html")
+
+@app.route("/invoices/<store>")
+@login_required
+def invoices_by_store(store):
+
+    # -------------------------------
+    # Fetch unpaid invoices
+    # -------------------------------
+    unpaid_invoices = (
+        db.session.query(
+            StockOutRecord.invoice_no,
+            StockOutRecord.date,
+            StockOutRecord.paid
+        )
+        .filter_by(store=store, paid=False)
+        .distinct()
+        .all()
+    )
+
+    # -------------------------------
+    # Fetch paid invoices
+    # -------------------------------
+    paid_invoices = (
+        db.session.query(
+            StockOutRecord.invoice_no,
+            StockOutRecord.date,
+            StockOutRecord.paid
+        )
+        .filter_by(store=store, paid=True)
+        .distinct()
+        .all()
+    )
+
+    # -------------------------------
+    # Helper: safe Decimal conversion
+    # -------------------------------
+    def safe_decimal(val):
+        try:
+            return Decimal(str(val or 0))
+        except:
+            return Decimal("0")
+
+    GST_RATE = Decimal("0.10")
+
+    # -------------------------------
+    # Collect invoice numbers
+    # -------------------------------
+    all_invoice_nos = (
+        [row[0] for row in unpaid_invoices] +
+        [row[0] for row in paid_invoices]
+    )
+
+    # -------------------------------
+    # Fetch all line items
+    # -------------------------------
+    records = (
+        StockOutRecord.query
+        .filter(StockOutRecord.invoice_no.in_(all_invoice_nos))
+        .order_by(StockOutRecord.invoice_no)
+        .all()
+    )
+
+    # -------------------------------
+    # Group items by invoice
+    # -------------------------------
+    items_by_invoice = {}
+
+    for r in records:
+        r.total_cost = safe_decimal(r.price) * safe_decimal(r.quantity)
+
+        # ✅ Selling price is GST-exclusive
+        r.total_selling_ex_gst = safe_decimal(r.selling_price) * safe_decimal(r.quantity)
+
+        # ✅ GST calculated AFTER
+        r.gst_amount = (r.total_selling_ex_gst * GST_RATE).quantize(Decimal("0.01"))
+
+        # ✅ Final total
+        r.total_selling_inc_gst = (r.total_selling_ex_gst + r.gst_amount).quantize(Decimal("0.01"))
+
+        items_by_invoice.setdefault(r.invoice_no, []).append(r)
+
+    # -------------------------------
+    # ✅ TOTAL UNPAID (GST INCLUSIVE)
+    # -------------------------------
+    total_unpaid_amount = Decimal("0")
+
+    for inv in unpaid_invoices:
+        invoice_no = inv[0]
+        items = items_by_invoice.get(invoice_no, [])
+
+        invoice_ex_gst = sum(i.total_selling_ex_gst for i in items)
+        invoice_gst = (invoice_ex_gst * GST_RATE).quantize(Decimal("0.01"))
+        invoice_inc_gst = invoice_ex_gst + invoice_gst
+
+        total_unpaid_amount += invoice_inc_gst
+
+    total_unpaid_amount = total_unpaid_amount.quantize(Decimal("0.01"))
+
+    # -------------------------------
+    # Render
+    # -------------------------------
+    return render_template(
+        "invoices_list.html",
+        store=store,
+        unpaid_invoices=unpaid_invoices,
+        paid_invoices=paid_invoices,
+        items_by_invoice=items_by_invoice,
+        total_unpaid_amount=total_unpaid_amount
+    )
+
+
+
+@app.route("/export_invoice/<int:invoice_no>")
+@login_required
+def export_invoice(invoice_no):
+    """Generate and download a formatted PDF invoice (GST exclusive + GST added)."""
+
+    records = StockOutRecord.query.filter_by(invoice_no=invoice_no).all()
+
+    if not records:
+        return "Invoice not found.", 404
+
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # ================= COMPANY INFO =================
+    pdf.set_font("Arial", "B", 16)
+    pdf.cell(200, 10, "Bing Chillin", ln=True, align="C")
+
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(200, 6, "Victoria, Australia", ln=True, align="C")
+    pdf.cell(200, 6, "ABN 35662088717", ln=True, align="C")
+    pdf.cell(200, 6, "0401546788 | mail@bingchillin.com.au", ln=True, align="C")
+    pdf.ln(10)
+
+    # ================= INVOICE HEADER =================
+    pdf.set_font("Arial", "B", 18)
+    pdf.cell(200, 10, "INVOICE", ln=True, align="C")
+    pdf.ln(5)
+
+    # ================= INVOICE DETAILS =================
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(40, 8, "Invoice #:", border=0)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(150, 8, str(invoice_no), border=0, ln=True)
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(40, 8, "Bill To:", border=0)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(150, 8, records[0].store, border=0, ln=True)
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(40, 8, "Invoice Date:", border=0)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(150, 8, records[0].date, border=0, ln=True)
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(40, 8, "Terms:", border=0)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(150, 8, "Due on Receipt", border=0, ln=True)
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(40, 8, "Due Date:", border=0)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(150, 8, records[0].date, border=0, ln=True)
+
+    pdf.ln(10)
+
+    # ================= TABLE HEADER =================
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(80, 10, "Item & Description", border=1)
+    pdf.cell(30, 10, "Qty", border=1, align="C")
+    pdf.cell(40, 10, "Selling Price (ex GST)", border=1, align="C")
+    pdf.cell(40, 10, "Line Total", border=1, align="C", ln=True)
+
+    # ================= INGREDIENT PRICES =================
+    ingredient_prices = {
+        i.name: i.selling_price if i.selling_price else i.price_per_unit
+        for i in Ingredient.query.all()
+    }
+
+    # ================= TABLE DATA =================
+    pdf.set_font("Arial", "", 12)
+
+    subtotal = 0.0
+
+    for record in records:
+        selling_price = ingredient_prices.get(record.item, record.price)
+
+        line_total = float(selling_price) * float(record.quantity)
+        subtotal += line_total
+
+        pdf.cell(80, 10, record.item, border=1)
+        pdf.cell(30, 10, f"{record.quantity:.1f}", border=1, align="C")
+        pdf.cell(40, 10, f"${selling_price:.2f}", border=1, align="C")
+        pdf.cell(40, 10, f"${line_total:.2f}", border=1, align="C", ln=True)
+
+    # ================= TOTALS =================
+    GST_RATE = 0.10
+    gst_amount = subtotal * GST_RATE
+    grand_total = subtotal + gst_amount
+
+    pdf.ln(5)
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(80, 8, "Subtotal (ex GST):", border=0)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(80, 8, f"${subtotal:.2f}", border=0, ln=True)
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(80, 8, "GST (10%):", border=0)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(80, 8, f"${gst_amount:.2f}", border=0, ln=True)
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(80, 8, "Total (inc GST):", border=0)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(80, 8, f"${grand_total:.2f}", border=0, ln=True)
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(80, 8, "Payment Made (-):", border=0)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(80, 8, "$0.00", border=0, ln=True)
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.cell(80, 8, "Balance Due:", border=0)
+    pdf.set_font("Arial", "", 12)
+    pdf.cell(80, 8, f"${grand_total:.2f}", border=0, ln=True)
+
+    pdf.ln(15)
+
+    # ================= NOTES =================
+    pdf.set_font("Arial", "I", 12)
+    pdf.cell(200, 8, "Thanks for your business.", ln=True, align="C")
+
+    # ================= SAVE FILE =================
+    invoices_dir = os.path.join(os.getcwd(), "static", "invoices")
+    if not os.path.exists(invoices_dir):
+        os.makedirs(invoices_dir)
+
+    store_name = records[0].store.replace(" ", "_")
+    pdf_filename = os.path.join(
+        invoices_dir,
+        f"Invoice_{invoice_no}_{store_name}.pdf"
+    )
+
+    pdf.output(pdf_filename)
+
+    return send_file(pdf_filename, as_attachment=True)
+
+@app.route("/mark_paid/<string:invoice_no>", methods=["POST"])
+@login_required
+def mark_invoice_paid(invoice_no):
+    """Marks an invoice as paid and ensures the commit is properly applied."""
+    try:
+        print(f"📝 Marking Invoice {invoice_no} as Paid...")
+
+        # ✅ Fetch the records associated with this invoice number
+        records = StockOutRecord.query.filter_by(invoice_no=invoice_no).all()
+
+        if not records:
+            print(f"❌ Invoice {invoice_no} not found in StockOutRecord.")
+            return jsonify({"success": False, "message": "Invoice not found."})
+
+        # ✅ Debug: Print before update
+        for record in records:
+            print(f"🔍 BEFORE UPDATE - Invoice No: {record.invoice_no}, Paid: {record.paid}")
+
+        # ✅ ORM Update (Not working, but keeping for reference)
+        for record in records:
+            record.paid = 1  # ✅ Force setting paid to 1
+
+        db.session.commit()  # ✅ Try committing ORM changes (may fail)
+
+        # ✅ Force update using raw SQL query (ensures database is updated)
+        db.session.execute(
+            text("UPDATE stock_out_record SET paid = 1 WHERE invoice_no = :invoice_no"),
+            {"invoice_no": invoice_no}
+        )
+        db.session.commit()  # ✅ Second forced commit
+
+        # ✅ Debug: Print after update
+        updated_records = db.session.execute(
+            text("SELECT invoice_no, paid FROM stock_out_record WHERE invoice_no = :invoice_no"),
+            {"invoice_no": invoice_no}
+        ).fetchall()
+
+        print(f"📝 DATABASE CHECK AFTER COMMIT: {updated_records}")  # ✅ Logs database results
+
+        return jsonify({"success": True, "message": f"Invoice {invoice_no} marked as Paid!", "invoice_no": invoice_no})
+
+    except Exception as e:
+        db.session.rollback()  # ✅ Rollback on failure
+        print(f"❌ Error marking invoice as paid: {e}")
+        return jsonify({"success": False, "message": "Error updating invoice status."})
+
+@app.route("/recipes", methods=["GET", "POST"])
+@login_required
+def manage_recipes():
+    if request.method == "POST":
+        recipe_id = request.form.get("recipe_id")  # ✅ Check if editing an existing recipe
+        output_item_id = request.form.get("output_item")
+        ingredient_ids = request.form.getlist("ingredient_id[]")
+        grams_used_list = request.form.getlist("grams_used[]")
+
+        # ✅ Validate input
+        if not output_item_id:
+            return jsonify({"success": False, "message": "Please select an output item."})
+        if not ingredient_ids or not grams_used_list:
+            return jsonify({"success": False, "message": "Please add at least one ingredient."})
+
+        try:
+            valid_ingredients = [
+                (int(ingredient_ids[i]), float(grams_used_list[i]))
+                for i in range(len(ingredient_ids))
+                if float(grams_used_list[i]) > 0
+            ]
+        except ValueError:
+            return jsonify({"success": False, "message": "Invalid ingredient quantity entered."})
+
+        # ✅ Editing an Existing Recipe
+        if recipe_id:
+            recipe = Recipe.query.get(recipe_id)
+            if not recipe:
+                return jsonify({"success": False, "message": "Recipe not found."})
+
+            # ✅ Delete existing ingredients before updating
+            RecipeIngredient.query.filter_by(recipe_id=recipe_id).delete()
+
+        else:
+            # ✅ If not editing, create a new recipe
+            recipe = Recipe(output_item_id=output_item_id)
+            db.session.add(recipe)
+            db.session.commit()  # Commit to generate the recipe ID
+
+        # ✅ Add Ingredients to the Recipe
+        for ingredient_id, grams_used in valid_ingredients:
+            recipe_ingredient = RecipeIngredient(
+                recipe_id=recipe.id,
+                ingredient_id=ingredient_id,
+                grams_used=grams_used
+            )
+            db.session.add(recipe_ingredient)
+
+        db.session.commit()
+        return jsonify({"success": True, "message": "Recipe saved successfully!"})
+
+    # ✅ Load all recipes with their ingredients
+    recipes = Recipe.query.all()
+    recipes_data = {}
+
+    for recipe in recipes:
+        output_item = Ingredient.query.get(recipe.output_item_id)
+        if not output_item:
+            print(f"⚠️ Warning: Recipe {recipe.id} has a missing output item. Skipping.")
+            continue  # Skip recipes with missing output items
+
+        recipe_ingredients = RecipeIngredient.query.filter_by(recipe_id=recipe.id).all()
+        recipes_data[recipe.id] = {
+            "id": recipe.id,
+            "output_item_name": output_item.name,
+            "ingredients": [
+                {"id": ri.ingredient_id, "name": Ingredient.query.get(ri.ingredient_id).name, "quantity": ri.grams_used}
+                for ri in recipe_ingredients if Ingredient.query.get(ri.ingredient_id)
+            ]
+        }
+
+    ingredients = Ingredient.query.all()
+    return render_template("recipes.html", recipes=recipes_data, ingredients=ingredients)
+
+GST_RATE = Decimal("0.10")  # 🔹 Used ONLY for revenue display, NOT cost
+
+
+@app.route("/reports", methods=["GET"])
+@login_required
+def reporting_page():
+    report_type = request.args.get("report_type", "gross_profit")
+    selected_range = request.args.get("date_range", "weekly")
+    selected_store = request.args.get("store", "")
+
+    # 🗓️ Manual date override
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+
+    today = datetime.utcnow().date()
+
+    if start_date_str and end_date_str:
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+        selected_range = "custom"
+    else:
+        if selected_range == "weekly":
+            start_date = today - timedelta(days=7)
+        elif selected_range == "monthly":
+            start_date = today.replace(day=1)
+        elif selected_range == "quarterly":
+            quarter_start_month = ((today.month - 1) // 3) * 3 + 1
+            start_date = today.replace(month=quarter_start_month, day=1)
+        else:
+            start_date = today - timedelta(days=7)
+
+        end_date = today
+
+    # 🧾 Fetch sales
+    query = StockOutRecord.query.filter(
+        StockOutRecord.date.between(start_date, end_date)
+    )
+
+    if selected_store:
+        query = query.filter(StockOutRecord.store == selected_store)
+
+    sales = query.all()
+
+    # 🔗 Ingredient lookup (by name)
+    ingredients = {i.name: i for i in Ingredient.query.all()}
+
+    # ================= ITEM GP =================
+    report_rows = defaultdict(lambda: {
+        "item": "",
+        "quantity": Decimal("0"),
+        "revenue_ex": Decimal("0"),
+        "cost": Decimal("0"),            # 🔹 PURE COST (NO GST)
+        "gross_profit": Decimal("0"),
+    })
+
+    # ================= CATEGORY GP =================
+    category_rows = defaultdict(lambda: {
+        "category": "",
+        "revenue_ex": Decimal("0"),
+        "cost": Decimal("0"),
+        "gross_profit": Decimal("0"),
+    })
+
+    for s in sales:
+        ingredient = ingredients.get(s.item)
+        if not ingredient:
+            continue
+
+        qty = Decimal(str(s.quantity))
+        sell_price = Decimal(str(ingredient.selling_price or 0))
+        cost_price = Decimal(str(ingredient.price_per_unit or 0))
+        category = ingredient.category or "Uncategorised"
+
+        revenue = sell_price * qty
+        cost = cost_price * qty
+        gp = revenue - cost
+
+        # Item aggregation
+        item = report_rows[s.item]
+        item["item"] = s.item
+        item["quantity"] += qty
+        item["revenue_ex"] += revenue
+        item["cost"] += cost
+        item["gross_profit"] += gp
+
+        # Category aggregation
+        cat = category_rows[category]
+        cat["category"] = category
+        cat["revenue_ex"] += revenue
+        cat["cost"] += cost
+        cat["gross_profit"] += gp
+
+    # ================= TOTALS =================
+    total_revenue_ex = sum(r["revenue_ex"] for r in report_rows.values())
+    total_cost = sum(r["cost"] for r in report_rows.values())
+    total_gp = total_revenue_ex - total_cost
+
+    # 🔹 Revenue GST only (optional display)
+    total_revenue_gst = total_revenue_ex * GST_RATE
+    total_revenue_inc = total_revenue_ex + total_revenue_gst
+
+    # 📈 Margin
+    gp_margin = (
+        (total_gp / total_revenue_ex) * 100
+        if total_revenue_ex > 0 else Decimal("0")
+    )
+
+    stores = ["Doncaster", "Lonsdale", "Clayton", "Glen Waverley"]
+
+    return render_template(
+        "reports.html",
+        report_type=report_type,
+        selected_range=selected_range,
+        selected_store=selected_store,
+
+        # Dates
+        start_date=start_date.strftime("%Y-%m-%d"),
+        end_date=end_date.strftime("%Y-%m-%d"),
+
+        stores=stores,
+
+        # Item GP
+        rows=report_rows.values(),
+
+        # Category GP
+        category_rows=category_rows.values(),
+
+        # Totals
+        total_revenue_ex=total_revenue_ex,
+        total_cost=total_cost,
+        total_gp=total_gp,
+
+        # Revenue GST (display only)
+        total_revenue_gst=total_revenue_gst,
+        total_revenue_inc=total_revenue_inc,
+
+        gp_margin=gp_margin
+    )
+
+
+@app.route("/quantity_made", methods=["GET", "POST"])
+@login_required
+def quantity_made():
+    if request.method == "POST":
+        try:
+            recipe_id = request.form.get("recipe_id")
+            quantity_made_input = request.form.get("quantity_made")
+
+            if not recipe_id or not quantity_made_input:
+                return jsonify({"success": False, "message": "Please select a recipe and enter a quantity."})
+
+            try:
+                quantity_made = Decimal(quantity_made_input)
+                if quantity_made <= 0:
+                    raise ValueError()
+            except (InvalidOperation, ValueError):
+                return jsonify({"success": False, "message": "Invalid quantity format."})
+
+            recipe = db.session.get(Recipe, recipe_id)
+            if not recipe:
+                return jsonify({"success": False, "message": "Recipe not found."})
+
+            recipe_ingredients = RecipeIngredient.query.filter_by(recipe_id=recipe.id).all()
+
+            # ✅ First pass — check availability
+            for ri in recipe_ingredients:
+                stock_ingredient = db.session.get(Ingredient, ri.ingredient_id)
+                if not stock_ingredient:
+                    return jsonify({"success": False, "message": f"Ingredient ID {ri.ingredient_id} not found."})
+
+                grams_needed = Decimal(str(ri.grams_used)) * quantity_made
+                grams_per_unit = Decimal(str(stock_ingredient.grams_per_unit or 1))
+                stock_to_deduct = grams_needed / grams_per_unit
+
+                if Decimal(str(stock_ingredient.quantity)) < stock_to_deduct:
+                    return jsonify({"success": False, "message": f"Not enough stock for {stock_ingredient.name}."})
+
+            # ✅ Second pass — deduct stock
+            for ri in recipe_ingredients:
+                stock_ingredient = db.session.get(Ingredient, ri.ingredient_id)
+                grams_needed = Decimal(str(ri.grams_used)) * quantity_made
+                grams_per_unit = Decimal(str(stock_ingredient.grams_per_unit or 1))
+                stock_to_deduct = grams_needed / grams_per_unit
+                stock_ingredient.quantity = Decimal(str(stock_ingredient.quantity)) - stock_to_deduct
+                db.session.merge(stock_ingredient)
+
+            # ✅ Increase output item
+            output_item = db.session.get(Ingredient, recipe.output_item_id)
+            if not output_item:
+                return jsonify({"success": False, "message": "Output item not found."})
+            output_item.quantity = Decimal(str(output_item.quantity)) + quantity_made
+            db.session.merge(output_item)
+
+            db.session.commit()
+            return jsonify({"success": True, "message": "✅ Quantity made successfully recorded!"})
+
+        except Exception as e:
+            db.session.rollback()
+            print("❌ Quantity Made Error:", str(e))
+            traceback.print_exc()
+            return jsonify({"success": False, "message": "An unexpected error occurred."})
+
+    # GET method
+    recipes = Recipe.query.all()
+    ingredients = Ingredient.query.all()
+    return render_template("quantity_made.html", recipes=recipes, ingredients=ingredients)
+
+@app.route("/edit_recipe/<int:recipe_id>", methods=["GET", "POST"])
+@login_required
+def edit_recipe(recipe_id):
+    recipe = Recipe.query.get_or_404(recipe_id)  # Fetch the recipe or return 404 if not found
+
+    if request.method == "POST":
+        output_item_id = request.form.get("output_item")
+        ingredient_ids = request.form.getlist("ingredient_id[]")
+        grams_used_list = request.form.getlist("grams_used[]")
+
+        # ✅ Validate inputs
+        if not output_item_id or not ingredient_ids or not grams_used_list:
+            flash("Output item and at least one ingredient are required.", "danger")
+            return redirect(url_for("edit_recipe", recipe_id=recipe_id))
+
+        try:
+            valid_ingredients = [
+                (int(ingredient_ids[i]), float(grams_used_list[i]))
+                for i in range(len(ingredient_ids))
+                if ingredient_ids[i] and grams_used_list[i] and float(grams_used_list[i]) > 0
+            ]
+        except ValueError:
+            flash("Invalid ingredient quantity entered.", "danger")
+            return redirect(url_for("edit_recipe", recipe_id=recipe_id))
+
+        # ✅ Update Recipe Output Item (Prevent Duplication)
+        if recipe.output_item_id != int(output_item_id):
+            recipe.output_item_id = int(output_item_id)
+
+        # ✅ Remove ingredients that are no longer part of the recipe
+        RecipeIngredient.query.filter(
+            RecipeIngredient.recipe_id == recipe.id,
+            RecipeIngredient.ingredient_id.notin_([i[0] for i in valid_ingredients])
+        ).delete()
+
+        # ✅ Update existing ingredients or add new ones
+        for ingredient_id, grams_used in valid_ingredients:
+            existing_entry = RecipeIngredient.query.filter_by(
+                recipe_id=recipe.id, ingredient_id=ingredient_id
+            ).first()
+
+            if existing_entry:
+                existing_entry.grams_used = grams_used  # ✅ Update grams used
+            else:
+                new_ingredient = RecipeIngredient(
+                    recipe_id=recipe.id, ingredient_id=ingredient_id, grams_used=grams_used
+                )
+                db.session.add(new_ingredient)
+
+        db.session.commit()
+        flash("Recipe updated successfully!", "success")
+        return redirect(url_for("manage_recipes"))
+
+    # ✅ Load Recipe Ingredients for Editing
+    recipe_ingredients = RecipeIngredient.query.filter_by(recipe_id=recipe.id).all()
+    ingredients = Ingredient.query.all()
+
+    return render_template("edit_recipe.html", recipe=recipe, recipe_ingredients=recipe_ingredients, ingredients=ingredients)
+
+@app.route("/delete_recipe/<int:recipe_id>", methods=["POST"])
+@login_required
+def delete_recipe(recipe_id):
+    recipe = db.session.query(Recipe).get(recipe_id)  # ✅ Query explicitly to avoid session conflict
+
+    if not recipe:
+        print(f"❌ Recipe ID {recipe_id} not found.")
+        return jsonify({"success": False, "message": "Recipe not found."})
+
+    try:
+        # ✅ Log recipe details
+        print(f"📝 Deleting Recipe ID {recipe_id} with output item ID {recipe.output_item_id}")
+
+        # ✅ First, delete associated recipe ingredients
+        deleted_ingredients = db.session.query(RecipeIngredient).filter_by(recipe_id=recipe_id).delete()
+        print(f"📝 Deleted {deleted_ingredients} related ingredients.")
+
+        # ✅ Remove recipe from old session if needed
+        if db.session.object_session(recipe) is not None:
+            db.session.expunge(recipe)  # ✅ Expunge recipe from the old session
+
+        # ✅ Re-add the recipe to the new session before deleting
+        db.session.add(recipe)
+        db.session.delete(recipe)
+
+        # ✅ Commit changes and refresh the session
+        db.session.commit()
+        db.session.flush()
+        db.session.expire_all()
+        db.session.close()
+
+        print(f"✅ Recipe ID {recipe_id} and its ingredients deleted successfully.")
+        return jsonify({"success": True, "message": "Recipe deleted successfully!"})
+
+    except Exception as e:
+        db.session.rollback()  # Rollback in case of failure
+        print(f"❌ Database error: {e}")  # Log error in Flask logs
+        return jsonify({"success": False, "message": "Error deleting recipe. Please try again."})
+
+@app.route("/need_to_buy", methods=["GET"])
+@login_required
+def need_to_buy():
+    # ✅ Get selected supplier from request parameters
+    selected_supplier = request.args.get("supplier", "")
+
+    # ✅ Query ingredients using the correct supplier field (supplier ID)
+    query = """
+        SELECT i.name, i.quantity, i.threshold, i.supplier
+        FROM ingredient i
+    """
+    result = db.session.execute(query).fetchall()
+
+    # ✅ Create a list to store items that need to be purchased
+    items_to_buy = []
+    suppliers = set()  # ✅ Store unique supplier IDs for filtering
+
+    for row in result:
+        name, quantity, threshold, supplier = row
+        threshold = threshold if threshold is not None else 0
+        quantity = quantity if quantity is not None else 0
+        supplier = supplier if supplier is not None else "Unknown"  # ✅ Ensure a fallback name
+
+        stock_difference = threshold - quantity
+
+        # ✅ Add supplier to the dropdown list (use supplier ID)
+        if supplier and supplier != "Unknown":
+            suppliers.add(str(supplier))  # Store supplier ID as string
+
+        # ✅ Only show items that need to be bought
+        if stock_difference > 0:
+            if selected_supplier and selected_supplier != "All Suppliers" and str(supplier) != selected_supplier:
+                continue  # ✅ Skip items that don’t match the selected supplier
+
+            items_to_buy.append({
+                "name": name,
+                "current_stock": quantity,
+                "threshold": threshold,
+                "need_to_buy": stock_difference,
+                "supplier": supplier  # ✅ Show supplier ID
+            })
+
+    return render_template(
+        "need_to_buy.html",
+        items_to_buy=items_to_buy,
+        suppliers=sorted(suppliers),
+        selected_supplier=selected_supplier
+    )
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(username=form.username.data).first()
+        if user and user.check_password(form.password.data):
+            login_user(user)
+            if user.role == 'admin':
+                return redirect(url_for('index'))  # Full access
+            else:
+                return redirect(url_for('blank_page'))  # Restricted users go to a blank page
+        else:
+            flash('Invalid username or password', 'danger')
+    return render_template('login.html', form=form)
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+@app.route('/blank_page')
+@login_required
+def blank_page():
+    return render_template('blank.html')
+
+@app.route("/stocktake/<stocktake_type>", methods=["GET", "POST"])
+@login_required
+def stocktake(stocktake_type):
+    """Handles daily and weekly stocktake submissions for users."""
+
+    # ✅ Ensure only users (stores) can access stocktake
+    if current_user.role != "user":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    user_id = current_user.id
+
+    # ✅ Filter ingredients based on stocktake type & enforce custom ordering
+    if stocktake_type == "daily":
+        ingredients = Ingredient.query.filter_by(daily_stocktake=True).order_by(Ingredient.order_position.asc()).all()
+    elif stocktake_type == "weekly":
+        ingredients = Ingredient.query.filter_by(weekly_stocktake=True).order_by(Ingredient.weekly_order_position.asc()).all()
+    else:
+        flash("Invalid stocktake type.", "danger")
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        updated_stocktakes = []  # ✅ Store updated entries
+
+        for ingredient in ingredients:
+            quantity = request.form.get(f"quantity_{ingredient.id}")
+
+            # ✅ Handle binary stocktake (dropdown selection)
+            if ingredient.measurement_type == "binary":
+                if quantity == "Enough in store":
+                    recorded_value = "Enough in store"
+                elif quantity == "Not enough in store":
+                    recorded_value = "Not enough in store"
+                else:
+                    recorded_value = None  # User didn't select an option
+            else:
+                # ✅ Handle numeric stocktake
+                try:
+                    recorded_value = float(quantity)
+                except (ValueError, TypeError):
+                    flash(f"Invalid quantity for {ingredient.name}.", "danger")
+                    return redirect(url_for("stocktake", stocktake_type=stocktake_type))
+
+            if recorded_value is not None:
+                # ✅ Check if a stocktake entry for today already exists
+                today = datetime.utcnow().date()
+                existing_stocktake = Stocktake.query.filter(
+                    Stocktake.user_id == user_id,
+                    Stocktake.ingredient_id == ingredient.id,
+                    Stocktake.stocktake_type == stocktake_type
+                ).order_by(Stocktake.date_recorded.desc()).first()
+
+                if existing_stocktake and existing_stocktake.date_recorded.date() == today:
+                    # ✅ Update existing entry instead of inserting a new one
+                    existing_stocktake.quantity_on_hand = recorded_value
+                    updated_stocktakes.append(existing_stocktake)
+                else:
+                    # ✅ Create a new stocktake entry
+                    new_stock = Stocktake(
+                        user_id=user_id,
+                        ingredient_id=ingredient.id,
+                        quantity_on_hand=recorded_value,
+                        stocktake_type=stocktake_type,
+                        date_recorded=datetime.utcnow()
+                    )
+                    db.session.add(new_stock)
+
+        # ✅ Commit changes to the database
+        db.session.commit()
+        flash(f"{stocktake_type.capitalize()} Stocktake Recorded!", "success")
+
+        return redirect(url_for("stocktake", stocktake_type=stocktake_type))
+
+    return render_template("stocktake.html", ingredients=ingredients, stocktake_type=stocktake_type)
+
+@app.route("/admin/stocktake", methods=["GET"])
+@login_required
+def admin_stocktake():
+    # ✅ Ensure only admins can access
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    # ✅ Get all stores for the dropdown
+    stores = User.query.filter_by(role="user").all()
+
+    # ✅ Get filter values from request
+    selected_date = request.args.get("date")
+    selected_store = request.args.get("store")
+    stocktake_type = request.args.get("stocktake_type", "daily")  # ✅ Default to daily
+
+    # ✅ If no date is selected, default to today
+    if not selected_date:
+        selected_date = datetime.utcnow().strftime('%Y-%m-%d')
+
+    query = db.session.query(
+        Stocktake.id,
+        User.username.label("store_name"),
+        Ingredient.name.label("ingredient_name"),
+        Ingredient.measurement_type,
+        Stocktake.quantity_on_hand,
+        Stocktake.stocktake_type,
+        Stocktake.date_recorded
+    ).join(User, Stocktake.user_id == User.id) \
+     .join(Ingredient, Stocktake.ingredient_id == Ingredient.id) \
+     .filter(db.func.date(Stocktake.date_recorded) == selected_date)
+
+    # ✅ Apply stocktake type filter (daily or weekly)
+    if stocktake_type == "daily":
+        query = query.filter(Stocktake.stocktake_type == "daily") \
+                     .order_by(Ingredient.order_position.asc())  # ✅ Use the same ordering as the user side
+    elif stocktake_type == "weekly":
+        query = query.filter(Stocktake.stocktake_type == "weekly") \
+                     .order_by(Ingredient.weekly_order_position.asc())  # ✅ Use weekly order position
+
+    # ✅ Apply store filter if selected
+    if selected_store and selected_store != "all":
+        query = query.filter(Stocktake.user_id == selected_store)
+
+    # ✅ Order by latest stocktake records
+    stocktakes = query.all()
+
+    return render_template("admin_stocktake.html",
+                           stocktakes=stocktakes,
+                           stores=stores,
+                           selected_date=selected_date,
+                           selected_store=selected_store,
+                           stocktake_type=stocktake_type)  # ✅ Pass stocktake type to template
+
+@app.route("/admin/weekly_stocktake", methods=["GET"])
+@login_required
+def admin_weekly_stocktake():
+    """Admin view for weekly stocktake, ordered correctly and filtered properly."""
+
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    stores = User.query.filter_by(role="user").all()
+    selected_date = request.args.get("date", datetime.utcnow().strftime("%Y-%m-%d"))
+    selected_store = request.args.get("store", "all")
+
+    try:
+        selected_date_obj = datetime.strptime(selected_date, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Invalid date format.", "danger")
+        return redirect(url_for("admin_weekly_stocktake"))
+
+    # ✅ Build base query
+    query = db.session.query(
+        Stocktake.id,
+        User.username.label("store_name"),
+        Ingredient.name.label("ingredient_name"),
+        Stocktake.quantity_on_hand,
+        StoreThreshold.threshold,
+        Stocktake.date_recorded,
+        Ingredient.weekly_order_position
+    ).join(User, Stocktake.user_id == User.id) \
+     .join(Ingredient, Stocktake.ingredient_id == Ingredient.id) \
+     .outerjoin(StoreThreshold, (StoreThreshold.store_id == Stocktake.user_id) & (StoreThreshold.ingredient_id == Stocktake.ingredient_id)) \
+     .filter(Stocktake.stocktake_type == "weekly") \
+     .filter(func.date(Stocktake.date_recorded) == selected_date_obj)
+
+    if selected_store != "all":
+        query = query.filter(Stocktake.user_id == selected_store)
+
+    query = query.order_by(Ingredient.weekly_order_position.asc())
+    raw_stocktakes = query.limit(100).all()
+
+    # ✅ Format stocktakes
+    stocktakes = []
+    for stock in raw_stocktakes:
+        raw_quantity = stock.quantity_on_hand
+        threshold = stock.threshold if stock.threshold is not None else 0
+
+        # Try parsing quantity intelligently
+        try:
+            # Check if it's a numeric string
+            if isinstance(raw_quantity, str) and raw_quantity.replace(".", "", 1).isdigit():
+                numeric_quantity = float(raw_quantity)
+                display_quantity = f"{numeric_quantity:.1f}"
+            elif isinstance(raw_quantity, (int, float)):
+                numeric_quantity = float(raw_quantity)
+                display_quantity = f"{numeric_quantity:.1f}"
+            elif raw_quantity == "Enough in store":
+                numeric_quantity = 0
+                display_quantity = "Enough in store"
+            elif raw_quantity == "Not enough in store":
+                numeric_quantity = 0
+                display_quantity = "Not enough in store"
+            else:
+                numeric_quantity = 0
+                display_quantity = "Invalid"
+        except:
+            numeric_quantity = 0
+            display_quantity = "Invalid"
+
+        # Needed stock logic
+        if display_quantity == "Not enough in store":
+            needed_stock = 1
+        elif display_quantity == "Invalid":
+            needed_stock = 0
+        else:
+            needed_stock = max(threshold - numeric_quantity, 0)
+
+        stocktakes.append({
+            "id": stock.id,
+            "store_name": stock.store_name,
+            "ingredient_name": stock.ingredient_name,
+            "quantity_on_hand": display_quantity,
+            "threshold": threshold,
+            "needed_stock": needed_stock,
+            "date_recorded": stock.date_recorded.strftime("%Y-%m-%d")
+        })
+
+    return render_template(
+        "admin_weekly_stocktake.html",
+        stocktakes=stocktakes,
+        stores=stores,
+        selected_date=selected_date,
+        selected_store=selected_store
+    )
+
+@app.route("/admin/manage_thresholds", methods=["GET", "POST"])
+@login_required
+def manage_thresholds():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    # ✅ Get all stores
+    stores = User.query.filter_by(role="user").all()
+
+    # ✅ Fetch only ingredients that are part of the weekly stocktake
+    ingredients = Ingredient.query.filter_by(weekly_stocktake=True).all()
+
+    # ✅ Store filter for better usability
+    selected_store = request.args.get("store_id", "all")
+
+    if request.method == "POST":
+        store_id = request.form.get("store_id")
+        ingredient_id = request.form.get("ingredient_id")
+        threshold = request.form.get("threshold")
+
+        if store_id and ingredient_id and threshold:
+            # ✅ Check if the threshold already exists
+            existing_threshold = db.session.execute(
+                text("SELECT id FROM store_thresholds WHERE store_id = :store_id AND ingredient_id = :ingredient_id"),
+                {"store_id": store_id, "ingredient_id": ingredient_id}
+            ).fetchone()
+
+            if existing_threshold:
+                flash("Threshold for this store and ingredient already exists!", "warning")
+            else:
+                # ✅ Insert a new threshold
+                db.session.execute(
+                    text("INSERT INTO store_thresholds (store_id, ingredient_id, threshold) VALUES (:store_id, :ingredient_id, :threshold)"),
+                    {"store_id": store_id, "ingredient_id": ingredient_id, "threshold": threshold}
+                )
+                db.session.commit()
+                flash("Threshold added successfully!", "success")
+
+    # ✅ Fetch thresholds, optionally filtering by store
+    query = """
+        SELECT st.id, st.store_id, st.ingredient_id, st.threshold, u.username AS store_name, i.name AS ingredient_name
+        FROM store_thresholds st
+        JOIN user u ON st.store_id = u.id
+        JOIN ingredient i ON st.ingredient_id = i.id
+        WHERE i.weekly_stocktake = 1
+    """
+    params = {}
+
+    if selected_store != "all":
+        query += " AND st.store_id = :store_id"
+        params["store_id"] = selected_store
+
+    thresholds = db.session.execute(text(query), params).mappings().all()
+
+    return render_template(
+        "admin_manage_thresholds.html",
+        stores=stores,
+        ingredients=ingredients,
+        thresholds=thresholds,
+        selected_store=selected_store
+    )
+
+@app.route("/admin/update_threshold/<int:id>", methods=["POST"])
+@login_required
+def update_threshold(id):
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    new_threshold = request.form.get("new_threshold")
+
+    if new_threshold:
+        db.session.execute(
+            text("UPDATE store_thresholds SET threshold = :threshold WHERE id = :id"),
+            {"threshold": new_threshold, "id": id}
+        )
+        db.session.commit()
+        flash("Threshold updated successfully!", "success")
+
+    return redirect(url_for("manage_thresholds"))
+
+@app.route("/admin/delete_threshold/<int:id>", methods=["POST"])
+@login_required
+def delete_threshold(id):
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    db.session.execute(text("DELETE FROM store_thresholds WHERE id = :id"), {"id": id})
+    db.session.commit()
+    flash("Threshold deleted successfully!", "danger")
+
+    return redirect(url_for("manage_thresholds"))
+
+@app.route("/admin/update_stocktake_order", methods=["POST"])
+@login_required
+def update_stocktake_order():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    order_data = request.json.get("order")
+
+    if order_data:
+        for index, ingredient_id in enumerate(order_data):
+            db.session.execute(
+                text("UPDATE ingredient SET order_position = :order WHERE id = :id"),
+                {"order": index, "id": ingredient_id}
+            )
+        db.session.commit()
+        return jsonify({"success": True})
+
+    return jsonify({"success": False, "error": "No order data received"})
+
+@app.route("/admin/manage_stocktake_order", methods=["GET"])
+@login_required
+def manage_stocktake_order():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    # Fetch ingredients ordered by `order_position`
+    ingredients = Ingredient.query.filter_by(daily_stocktake=True).order_by(Ingredient.order_position.asc()).all()
+
+    return render_template("admin_manage_stocktake_order.html", ingredients=ingredients)
+
+@app.route("/admin/manage_weekly_stocktake_order", methods=["GET"])
+@login_required
+def manage_weekly_stocktake_order():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    ingredients = Ingredient.query.filter_by(weekly_stocktake=True).order_by(Ingredient.weekly_order_position.asc()).all()
+
+    return render_template("admin_manage_weekly_stocktake_order.html", ingredients=ingredients)
+
+@app.route("/admin/update_weekly_stocktake_order", methods=["POST"])
+@login_required
+def update_weekly_stocktake_order():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    order_data = request.json.get("order")
+
+    if order_data:
+        for index, ingredient_id in enumerate(order_data):
+            db.session.execute(
+                text("UPDATE ingredient SET weekly_order_position = :order WHERE id = :id"),
+                {"order": index, "id": ingredient_id}
+            )
+        db.session.commit()
+        return jsonify({"success": True})
+
+    return jsonify({"success": False, "error": "No order data received"})
+
+@app.route("/debug_db", methods=["GET"])
+@login_required
+def debug_db():
+    # ✅ Print current database connection
+    print(f"🔍 Database URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
+
+    # ✅ Check if Flask is retrieving correct stock
+    stock_check = db.session.query(Ingredient.id, Ingredient.name, Ingredient.quantity).all()
+    for item in stock_check:
+        print(f"📦 Stock: {item.id} - {item.name}: {item.quantity}")
+
+    return jsonify({"success": True})
+
+@app.route("/get_stock_data", methods=["GET"])
+@login_required
+def get_stock_data():
+    ingredients = Ingredient.query.all()
+    ingredient_data = [{"id": i.id, "name": i.name, "quantity": float(i.quantity)} for i in ingredients]
+    return jsonify({"success": True, "ingredients": ingredient_data})
+
+@app.route("/increase_output", methods=["POST"])
+@login_required
+def increase_output():
+    recipe_id = request.form.get("recipe_id")
+    quantity_made = request.form.get("quantity_made")
+
+    if not recipe_id or not quantity_made:
+        return jsonify({"success": False, "message": "Please select a recipe and enter a quantity."})
+
+    try:
+        quantity_made = Decimal(quantity_made)  # Convert to Decimal for accuracy
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid quantity entered."})
+
+    # ✅ Fetch the recipe and validate
+    recipe = Recipe.query.get(recipe_id)
+    if not recipe:
+        return jsonify({"success": False, "message": "Invalid recipe selected."})
+
+    output_item = Ingredient.query.get(recipe.output_item_id)
+    if output_item:
+        new_output_quantity = Decimal(output_item.quantity) + quantity_made
+
+        # ✅ Force raw SQL execution
+        db.session.execute(
+            "UPDATE ingredient SET quantity = :new_quantity WHERE id = :id",
+            {"new_quantity": new_output_quantity, "id": recipe.output_item_id}
+        )
+
+        print(f"✅ Increased {output_item.name} by {quantity_made}. New Quantity: {new_output_quantity}")
+
+        # ✅ Commit & Refresh
+        db.session.commit()
+        db.session.flush()
+        db.session.expire_all()
+        db.session.close()
+
+        # ✅ Verify update
+        updated_output = db.session.execute(
+            "SELECT quantity FROM ingredient WHERE id = :id",
+            {"id": recipe.output_item_id}
+        ).fetchone()
+
+        print(f"📝 AFTER COMMIT: {output_item.name} - DB Quantity: {updated_output[0]}")
+
+        return jsonify({"success": True, "message": "Output stock updated successfully!"})
+
+    return jsonify({"success": False, "message": "Output item not found."})
+
+@app.route("/deduct_ingredients", methods=["POST"])
+@login_required
+def deduct_ingredients():
+    recipe_id = request.form.get("recipe_id")
+    quantity_made = request.form.get("quantity_made")
+
+    if not recipe_id or not quantity_made:
+        return jsonify({"success": False, "message": "Please select a recipe and enter a quantity."})
+
+    try:
+        quantity_made = Decimal(quantity_made)  # Convert to Decimal for accuracy
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid quantity entered."})
+
+    # ✅ Fetch the recipe and validate
+    recipe = Recipe.query.get(recipe_id)
+    if not recipe:
+        return jsonify({"success": False, "message": "Invalid recipe selected."})
+
+    recipe_ingredients = RecipeIngredient.query.filter_by(recipe_id=recipe_id).all()
+
+    for recipe_ingredient in recipe_ingredients:
+        ingredient = Ingredient.query.get(recipe_ingredient.ingredient_id)
+
+        if ingredient and ingredient.grams_per_unit > 0:
+            total_grams_used = Decimal(recipe_ingredient.grams_used) * quantity_made
+            units_to_deduct = total_grams_used / Decimal(ingredient.grams_per_unit)
+
+            new_quantity = Decimal(ingredient.quantity) - units_to_deduct
+
+            if new_quantity >= 0:
+                # ✅ Force raw SQL execution to ensure database updates
+                db.session.execute(
+                    "UPDATE ingredient SET quantity = :new_quantity WHERE id = :id",
+                    {"new_quantity": new_quantity, "id": recipe_ingredient.ingredient_id}
+                )
+                print(f"✅ Deducted {units_to_deduct} from {ingredient.name}. New Quantity: {new_quantity}")
+            else:
+                print(f"❌ Not enough stock for {ingredient.name}. Needed: {units_to_deduct}, Available: {ingredient.quantity}")
+                return jsonify({"success": False, "message": f"Not enough stock for {ingredient.name}!"})
+
+    # ✅ Commit & Refresh
+    try:
+        db.session.commit()
+        db.session.flush()
+        db.session.expire_all()
+        db.session.close()
+
+        # ✅ Verify the ingredient updates
+        for recipe_ingredient in recipe_ingredients:
+            updated_ingredient = db.session.execute(
+                "SELECT quantity FROM ingredient WHERE id = :id",
+                {"id": recipe_ingredient.ingredient_id}
+            ).fetchone()
+
+            print(f"📝 AFTER COMMIT: {recipe_ingredient.ingredient_id} - DB Quantity: {updated_ingredient[0]}")
+
+        return jsonify({"success": True, "message": "Ingredients deducted successfully!"})
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Database Commit Failed: {e}")
+        return jsonify({"success": False, "message": "Database update failed."})
+
+@app.route("/process_quantity_made", methods=["POST"])
+@login_required
+def process_quantity_made():
+    recipe_id = request.form.get("recipe_id")
+    quantity_made = request.form.get("quantity_made")
+
+    if not recipe_id or not quantity_made:
+        return jsonify({"success": False, "message": "Please select a recipe and enter a quantity."})
+
+    try:
+        quantity_made = Decimal(quantity_made)  # Convert to Decimal for accuracy
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid quantity entered."})
+
+    # ✅ Fetch the recipe and validate
+    recipe = Recipe.query.get(recipe_id)
+    if not recipe:
+        return jsonify({"success": False, "message": "Invalid recipe selected."})
+
+    recipe_ingredients = RecipeIngredient.query.filter_by(recipe_id=recipe_id).all()
+
+    # ✅ Step 1: Increase Output Item
+    output_item = Ingredient.query.get(recipe.output_item_id)
+    if output_item:
+        new_output_quantity = Decimal(output_item.quantity) + quantity_made
+        db.session.execute(
+            "UPDATE ingredient SET quantity = :new_quantity WHERE id = :id",
+            {"new_quantity": new_output_quantity, "id": recipe.output_item_id}
+        )
+        print(f"✅ Increased {output_item.name} by {quantity_made}. New Quantity: {new_output_quantity}")
+
+    # ✅ Step 2: Deduct Ingredients
+    for recipe_ingredient in recipe_ingredients:
+        ingredient = Ingredient.query.get(recipe_ingredient.ingredient_id)
+
+        if ingredient and ingredient.grams_per_unit > 0:
+            total_grams_used = Decimal(recipe_ingredient.grams_used) * quantity_made
+            units_to_deduct = total_grams_used / Decimal(ingredient.grams_per_unit)
+
+            new_quantity = Decimal(ingredient.quantity) - units_to_deduct
+
+            if new_quantity >= 0:
+                db.session.execute(
+                    "UPDATE ingredient SET quantity = :new_quantity WHERE id = :id",
+                    {"new_quantity": new_quantity, "id": recipe_ingredient.ingredient_id}
+                )
+                print(f"✅ Deducted {units_to_deduct} from {ingredient.name}. New Quantity: {new_quantity}")
+            else:
+                print(f"❌ Not enough stock for {ingredient.name}. Needed: {units_to_deduct}, Available: {ingredient.quantity}")
+                return jsonify({"success": False, "message": f"Not enough stock for {ingredient.name}!"})
+
+    # ✅ Commit & Refresh
+    try:
+        db.session.commit()
+        db.session.flush()
+        db.session.expire_all()
+        db.session.close()
+
+        # ✅ Verify the ingredient updates
+        updated_output = db.session.execute(
+            "SELECT quantity FROM ingredient WHERE id = :id",
+            {"id": recipe.output_item_id}
+        ).fetchone()
+
+        print(f"📝 AFTER COMMIT: {output_item.name} - DB Quantity: {updated_output[0]}")
+
+        for recipe_ingredient in recipe_ingredients:
+            updated_ingredient = db.session.execute(
+                "SELECT quantity FROM ingredient WHERE id = :id",
+                {"id": recipe_ingredient.ingredient_id}
+            ).fetchone()
+            print(f"📝 AFTER COMMIT: {recipe_ingredient.ingredient_id} - DB Quantity: {updated_ingredient[0]}")
+
+        return jsonify({"success": True, "message": "Stock updated successfully!"})
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Database Commit Failed: {e}")
+        return jsonify({"success": False, "message": "Database update failed."})
+
+@app.route("/get_recipe/<int:recipe_id>", methods=["GET"])
+@login_required
+def get_recipe(recipe_id):
+    recipe = Recipe.query.get(recipe_id)
+    if not recipe:
+        return jsonify({"success": False, "message": "Recipe not found."})
+
+    ingredients = [
+        {"id": ri.ingredient_id, "name": Ingredient.query.get(ri.ingredient_id).name, "quantity": ri.grams_used}
+        for ri in RecipeIngredient.query.filter_by(recipe_id=recipe_id).all()
+    ]
+
+    return jsonify({"success": True, "ingredients": ingredients})
+
+@app.route("/delete_invoice/<string:invoice_no>", methods=["POST"])
+@login_required
+def delete_invoice(invoice_no):
+    try:
+        print(f"📝 Attempting to delete Invoice No: {invoice_no}")
+
+        # ✅ Query all records with the given invoice number
+        records = db.session.query(StockOutRecord).filter_by(invoice_no=invoice_no).all()
+
+        if not records:
+            print(f"❌ Invoice No {invoice_no} not found.")
+            return jsonify({"success": False, "message": "Invoice not found."})
+
+        # ✅ Delete all associated records
+        for record in records:
+            db.session.delete(record)
+
+        db.session.commit()  # ✅ Commit changes after deleting all records
+
+        print(f"✅ Invoice No {invoice_no} and all related records deleted successfully.")
+        return jsonify({"success": True, "message": f"Invoice {invoice_no} deleted successfully!"})
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Error deleting invoice: {e}")  # ✅ Log actual error
+        return jsonify({"success": False, "message": "Error deleting invoice. Please try again."})
+
+@app.route("/monthly_stocktake", methods=["GET"])
+@login_required
+def monthly_stocktake():
+    # ✅ Selected date (YYYY-MM-DD)
+    selected_date_str = request.args.get(
+        "date",
+        datetime.utcnow().strftime("%Y-%m-%d")
+    )
+    selected_date = datetime.strptime(selected_date_str, "%Y-%m-%d").date()
+
+    # ✅ All active ingredients
+    ingredients = Ingredient.query.filter_by(is_archived=False).order_by(Ingredient.name).all()
+
+    # ✅ Get existing stocktake records for this date
+    stocktake_records = MonthlyStocktake.query.filter_by(
+        stocktake_date=selected_date
+    ).all()
+
+    # ✅ Map by ingredient_id for template lookup
+    stocktake_data = {
+        record.ingredient_id: record
+        for record in stocktake_records
+    }
+
+    return render_template(
+        "monthly_stocktake.html",
+        ingredients=ingredients,
+        stocktake_data=stocktake_data,
+        selected_date=selected_date.strftime("%Y-%m-%d")
+    )
+
+
+@app.route("/submit_monthly_stocktake", methods=["POST"])
+@login_required
+def submit_monthly_stocktake():
+    payload = request.get_json() or {}
+    stocktake_items = payload.get("stocktake", [])
+    stocktake_date = payload.get("stocktake_date")  # YYYY-MM-DD
+
+    if not stocktake_date or not stocktake_items:
+        return jsonify({"success": False, "message": "Invalid stocktake submission."})
+
+    # ✅ Parse date safely
+    try:
+        stocktake_date = datetime.strptime(stocktake_date, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid stocktake date format."})
+
+    # ✅ Sort items so row locks happen in a consistent order (prevents deadlocks)
+    try:
+        stocktake_items = sorted(stocktake_items, key=lambda x: int(x["ingredient_id"]))
+    except Exception:
+        return jsonify({"success": False, "message": "Invalid stocktake payload."})
+
+    # ✅ Retry deadlocks a few times
+    MAX_RETRIES = 3
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            with db.session.no_autoflush:
+
+                for entry in stocktake_items:
+                    ingredient_id = int(entry["ingredient_id"])
+                    counted_quantity = Decimal(str(entry["counted_quantity"]))
+
+                    # 🔒 Lock the ingredient row so nobody else can update it mid-stocktake
+                    ingredient = (
+                        db.session.query(Ingredient)
+                        .filter(Ingredient.id == ingredient_id)
+                        .with_for_update()
+                        .first()
+                    )
+                    if not ingredient:
+                        continue
+
+                    # 🔒 Check duplicate with lock-consistent order
+                    exists = (
+                        db.session.query(MonthlyStocktake)
+                        .filter(
+                            MonthlyStocktake.ingredient_id == ingredient_id,
+                            MonthlyStocktake.stocktake_date == stocktake_date
+                        )
+                        .first()
+                    )
+                    if exists:
+                        return jsonify({
+                            "success": False,
+                            "message": f"Stocktake already exists for {ingredient.name} on {stocktake_date}."
+                        })
+
+                    # 📸 SNAPSHOT BEFORE CHANGE
+                    previous_quantity = Decimal(str(ingredient.quantity or 0))
+                    price_per_unit = Decimal(str(ingredient.price_per_unit or 0))
+
+                    variance_quantity = counted_quantity - previous_quantity
+                    variance_value = variance_quantity * price_per_unit
+
+                    record = MonthlyStocktake(
+                        stocktake_date=stocktake_date,
+                        ingredient_id=ingredient_id,
+                        previous_quantity=previous_quantity,
+                        counted_quantity=counted_quantity,
+                        variance_quantity=variance_quantity,
+                        price_per_unit=price_per_unit,
+                        variance_value=variance_value
+                    )
+
+                    db.session.add(record)
+
+                    # ✅ Update live stock (NO merge!)
+                    ingredient.quantity = counted_quantity
+
+            db.session.commit()
+
+            return jsonify({
+                "success": True,
+                "message": f"Stocktake recorded successfully for {stocktake_date}."
+            })
+
+        except OperationalError as e:
+            db.session.rollback()
+
+            # MySQL deadlock (1213) or lock wait timeout (1205)
+            msg = str(e.orig) if getattr(e, "orig", None) else str(e)
+            if "1213" in msg or "1205" in msg:
+                if attempt < MAX_RETRIES:
+                    continue
+                return jsonify({
+                    "success": False,
+                    "message": "Stocktake is busy right now (database lock). Please try again."
+                })
+
+            print("❌ Stocktake OperationalError:", e)
+            return jsonify({"success": False, "message": "Error processing stocktake."})
+
+        except IntegrityError as e:
+            db.session.rollback()
+            print("❌ Stocktake IntegrityError:", e)
+            return jsonify({
+                "success": False,
+                "message": "Duplicate stocktake detected (already exists)."
+            })
+
+        except Exception as e:
+            db.session.rollback()
+            print("❌ Stocktake Error:", e)
+            return jsonify({"success": False, "message": "Error processing stocktake."})
+
+
+@app.route("/monthly_stocktake_report", methods=["GET"])
+@login_required
+def monthly_stocktake_report():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    # 📅 Date range (YYYY-MM-DD)
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+
+    # Defaults: current month
+    today = datetime.utcnow().date()
+    if not start_date_str or not end_date_str:
+        start_date = today.replace(day=1)
+        end_date = today
+    else:
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+
+    records = (
+        MonthlyStocktake.query
+        .join(Ingredient)
+        .filter(MonthlyStocktake.stocktake_date.between(start_date, end_date))
+        .order_by(MonthlyStocktake.stocktake_date.asc(), Ingredient.name.asc())
+        .all()
+    )
+
+    total_gain = Decimal("0")
+    total_loss = Decimal("0")
+
+    for r in records:
+        if r.variance_value > 0:
+            total_gain += r.variance_value
+        else:
+            total_loss += abs(r.variance_value)
+
+    net_variance = total_gain - total_loss
+
+    return render_template(
+        "monthly_stocktake_report.html",
+        records=records,
+        start_date=start_date.strftime("%Y-%m-%d"),
+        end_date=end_date.strftime("%Y-%m-%d"),
+        total_gain=total_gain,
+        total_loss=total_loss,
+        net_variance=net_variance
+    )
+
+
+# Run the Flask app
+if __name__ == "__main__":
+    app.run(debug=True, port=8081)
+
+@app.route("/submit_weekly_stocktake", methods=["POST"])
+@login_required
+def submit_weekly_stocktake():
+    """Handles the submission of weekly stocktake."""
+    try:
+        data = request.get_json().get("stocktake", [])
+
+        if not data:
+            return jsonify({"success": False, "message": "No stocktake data provided."})
+
+        for entry in data:
+            ingredient_id = entry["ingredient_id"]
+            recorded_stock = entry["recorded_stock"]
+
+            # ✅ Determine if it's a text response or numeric value
+            need_to_buy = False
+            if recorded_stock == "Not enough in store":
+                need_to_buy = True  # ✅ Mark as needing purchase
+
+            # ✅ Insert into WeeklyStocktake
+            new_stocktake = WeeklyStocktake(
+                ingredient_id=ingredient_id,
+                recorded_stock=recorded_stock,
+                need_to_buy=need_to_buy
+            )
+            db.session.add(new_stocktake)
+
+        db.session.commit()
+        return jsonify({"success": True, "message": "Weekly stocktake recorded successfully!"})
+
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ Error submitting weekly stocktake: {e}")
+        return jsonify({"success": False, "message": "Error processing stocktake."})
+
+import smtplib
+import os
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+
+
+SMTP_SERVER = "smtp.gmail.com"  # ✅ Your email provider's SMTP
+SMTP_PORT = 587
+SMTP_USERNAME = "binginvoice@gmail.com"  # ✅ Replace with your email
+SMTP_PASSWORD = "ktpy xkxd byuo vssi"  # ✅ Replace with your app password
+
+@app.route("/send_invoice/<int:invoice_no>", methods=["POST"])
+@login_required
+def send_invoice(invoice_no):
+    try:
+        data = request.get_json()
+        recipient_email = data.get("email")
+
+        if not recipient_email:
+            return jsonify({"success": False, "message": "No recipient email provided."})
+
+        # ✅ Set invoices directory
+        invoices_dir = os.path.join(os.getcwd(), "static", "invoices")
+        if not os.path.exists(invoices_dir):
+            os.makedirs(invoices_dir)
+
+        # ✅ Retrieve store name from database
+        record = StockOutRecord.query.filter_by(invoice_no=invoice_no).first()
+        if not record:
+            return jsonify({"success": False, "message": "Invoice not found."})
+
+        store_name = record.store.replace(" ", "_")
+        pdf_filename = f"Invoice_{invoice_no}_{store_name}.pdf"
+        pdf_path = os.path.join(invoices_dir, pdf_filename)
+
+        # ✅ If PDF does NOT exist, generate it
+        if not os.path.exists(pdf_path):
+            print(f"⚠️ Invoice PDF not found. Generating Invoice #{invoice_no}...")
+            export_invoice(invoice_no)  # ✅ Generate the invoice PDF
+            if not os.path.exists(pdf_path):  # ✅ Double-check after generation
+                return jsonify({"success": False, "message": "Failed to generate invoice PDF."})
+
+        # ✅ Create email
+        msg = MIMEMultipart()
+        msg["From"] = SMTP_USERNAME
+        msg["To"] = recipient_email
+        msg["Subject"] = f"Invoice #{invoice_no}"
+
+        # ✅ Email Body
+        body = f"Please find attached Invoice #{invoice_no}."
+        msg.attach(MIMEText(body, "plain"))
+
+        # ✅ Attach PDF file
+        with open(pdf_path, "rb") as attachment:
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(attachment.read())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename={pdf_filename}")
+            msg.attach(part)
+
+        # ✅ Send email
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        server.starttls()
+        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.sendmail(SMTP_USERNAME, recipient_email, msg.as_string())
+        server.quit()
+
+        return jsonify({"success": True, "message": f"Invoice #{invoice_no} sent to {recipient_email}!"})
+
+    except Exception as e:
+        print(f"❌ Error sending invoice: {e}")
+        return jsonify({"success": False, "message": f"Error sending invoice: {e}"})
+
+@app.route("/prepare_stock_out", methods=["POST"])
+@login_required
+def prepare_stock_out():
+    store_id = request.form.get("store_id")
+    date = request.form.get("date")
+    ingredient_names = request.form.getlist("ingredient_names[]")
+    stock_needed = request.form.getlist("stock_needed[]")
+
+    # ✅ Get store name from ID
+    store_user = User.query.filter_by(id=store_id).first()
+    store_name = store_user.username if store_user else "Unknown"
+
+    # ✅ Build filtered items list
+    items = []
+    for name, qty in zip(ingredient_names, stock_needed):
+        try:
+            qty_float = float(qty)
+            if qty_float <= 0:
+                continue  # 🔥 Skip items with 0 or less
+        except (ValueError, TypeError):
+            continue  # 🔥 Skip non-numeric or invalid inputs
+
+        ingredient = Ingredient.query.filter_by(name=name).first()
+        if not ingredient:
+            print(f"⚠️ Ingredient not found: {name}")
+            continue
+
+        items.append({
+            "ingredientId": ingredient.id,
+            "ingredientName": ingredient.name,
+            "stockRemoved": qty_float,
+            "store": store_name,
+            "stockDate": date
+        })
+
+    # ✅ Save only items with valid stockRemoved > 0
+    session["prefilled_stock_out"] = {
+        "store": store_name,
+        "date": date,
+        "items": items
+    }
+
+    print("📦 Prefilled Stock Out Items:", session["prefilled_stock_out"])
+
+    return redirect(url_for("stock_out"))
+
+@app.route("/past_daily_stocktakes")
+@login_required
+def past_daily_stocktakes():
+    if current_user.role != "user":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    user_id = current_user.id
+
+    # ✅ Only include stocktakes from the last 7 days
+    today = datetime.utcnow().date()
+    seven_days_ago = today - timedelta(days=6)
+
+    # ✅ Get all daily stocktake ingredients in correct order
+    ordered_ingredients = Ingredient.query \
+        .filter_by(daily_stocktake=True) \
+        .order_by(Ingredient.order_position.asc()) \
+        .all()
+    ingredient_names = [ing.name for ing in ordered_ingredients]
+
+    # ✅ Fetch stocktakes from last 7 days
+    stocktakes = db.session.query(
+        Stocktake.ingredient_id,
+        Stocktake.date_recorded,
+        Stocktake.quantity_on_hand,
+        Ingredient.name.label("ingredient_name")
+    ).join(Ingredient, Stocktake.ingredient_id == Ingredient.id
+    ).filter(
+        Stocktake.user_id == user_id,
+        Stocktake.stocktake_type == "daily",
+        db.func.date(Stocktake.date_recorded) >= seven_days_ago
+    ).order_by(Stocktake.date_recorded.asc()).all()
+
+    # ✅ Organize into pivot structure
+    data = defaultdict(dict)
+    all_dates = set()
+
+    for record in stocktakes:
+        formatted_date = record.date_recorded.strftime('%d/%m/%y')
+        data[formatted_date][record.ingredient_name] = record.quantity_on_hand
+        all_dates.add(formatted_date)
+
+    sorted_dates = sorted(all_dates, key=lambda d: datetime.strptime(d, "%d/%m/%y"))
+
+    return render_template(
+        "past_daily_stocktakes.html",
+        data=data,
+        dates=sorted_dates,
+        ingredient_names=ingredient_names  # ✅ Ordered properly
+    )
+
+@app.route("/past_weekly_stocktakes")
+@login_required
+def past_weekly_stocktakes():
+    if current_user.role != "user":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    user_id = current_user.id
+
+    # Get last 7 dates where user did weekly stocktake
+    date_query = (
+        db.session.query(db.func.date(Stocktake.date_recorded))
+        .filter_by(user_id=user_id, stocktake_type="weekly")
+        .group_by(db.func.date(Stocktake.date_recorded))
+        .order_by(db.func.date(Stocktake.date_recorded).desc())
+        .limit(7)
+    )
+
+    recent_dates = [d[0] for d in date_query.all()]
+    recent_dates.sort()  # Sort ascending for left-to-right display
+
+    # Get all weekly ingredients for the user
+    ingredients = (
+        Ingredient.query
+        .filter_by(weekly_stocktake=True)
+        .order_by(Ingredient.weekly_order_position.asc())
+        .all()
+    )
+    ingredient_names = [ingredient.name for ingredient in ingredients]
+
+    # Initialize data dictionary
+    data = {date.strftime("%d/%m/%y"): {name: "" for name in ingredient_names} for date in recent_dates}
+
+    # Get actual stocktake records
+    records = (
+        db.session.query(
+            db.func.date(Stocktake.date_recorded),
+            Ingredient.name,
+            Stocktake.quantity_on_hand
+        )
+        .join(Ingredient, Stocktake.ingredient_id == Ingredient.id)
+        .filter(
+            Stocktake.user_id == user_id,
+            Stocktake.stocktake_type == "weekly",
+            db.func.date(Stocktake.date_recorded).in_(recent_dates)
+        )
+        .all()
+    )
+
+    for record_date, ingredient_name, quantity in records:
+        formatted_date = record_date.strftime("%d/%m/%y")
+        data[formatted_date][ingredient_name] = quantity
+
+    return render_template(
+        "past_weekly_stocktakes.html",
+        dates=[d.strftime("%d/%m/%y") for d in recent_dates],
+        ingredient_names=ingredient_names,
+        data=data
+    )
+
+@app.route("/purchasing")
+@login_required
+def purchasing():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+
+    # ✅ If no date filters, show all records
+    if start_date and end_date:
+        try:
+            start = datetime.strptime(start_date, "%Y-%m-%d").date()
+            end = datetime.strptime(end_date, "%Y-%m-%d").date()
+
+            records = StockInRecord.query \
+                .filter(StockInRecord.date >= start, StockInRecord.date <= end) \
+                .order_by(StockInRecord.date.desc()) \
+                .all()
+        except ValueError:
+            flash("Invalid date format.", "danger")
+            return redirect(url_for("purchasing"))
+    else:
+        records = StockInRecord.query.order_by(StockInRecord.date.desc()).all()
+
+    # ✅ Group data by date
+    grouped_data = {}
+    for record in records:
+        date_str = record.date.strftime("%d/%m/%y")
+        if date_str not in grouped_data:
+            grouped_data[date_str] = {"total": 0, "items": []}
+
+        price = float(record.price)
+        quantity = float(record.quantity)
+        total_price = price * quantity
+
+        grouped_data[date_str]["total"] += total_price
+        grouped_data[date_str]["items"].append({
+            "ingredient": record.item,
+            "quantity": quantity,
+            "supplier": record.supplier,
+            "price_per_unit": price,
+            "total_price": total_price
+        })
+
+    # ✅ Calculate total spend (reacts to filter)
+    total_spend = sum(data["total"] for data in grouped_data.values())
+
+    return render_template(
+        "purchasing.html",
+        grouped_data=grouped_data,
+        start_date=start_date,
+        end_date=end_date,
+        total_spend=total_spend
+    )
+
+@app.route("/sales_report", methods=["GET"])
+@login_required
+def sales_report():
+    try:
+        db.session.execute(text("SELECT 1"))
+    except OperationalError as e:
+        print("❌ DB connection lost. Reconnecting...")
+        db.session.remove()
+        db.session.execute(text("SELECT 1"))
+
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    # 🔎 Date filters
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    store_filter = request.args.get("store_filter")
+
+    if not start_date or not end_date:
+        today = datetime.utcnow().date()
+        start_date = today.strftime("%Y-%m-%d")
+        end_date = today.strftime("%Y-%m-%d")
+
+    start_utc = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
+    end_utc = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
+
+    stores = ["Doncaster", "Lonsdale", "Clayton", "Glen Waverley"]
+    selected_stores = [store_filter] if store_filter in stores else stores
+
+    all_sales = {}
+    total_revenue = 0
+    total_orders = 0
+    total_items_sold = 0
+    store_revenue = {}
+    category_sales = defaultdict(lambda: defaultdict(lambda: {"quantity": 0, "revenue": 0.0}))
+
+    for store_name in selected_stores:
+        store_orders = fetch_sales_for_store(store_name, start_date=start_utc, end_date=end_utc)
+
+        store_total = 0
+        for order in store_orders:
+            total_orders += 1
+            order_total = order.get('total_money', {}).get('amount', 0) / 100
+            total_revenue += order_total
+            store_total += order_total
+
+            for item in order.get("line_items", []):
+                item_name = item.get("name", "").strip()
+                if not item_name:
+                    continue
+                qty = int(item.get("quantity", 0))
+                price = item.get("base_price_money", {}).get("amount", 0) / 100
+                total_items_sold += qty
+                category = ITEM_CATEGORY_MAP.get(item_name, "Uncategorized")
+                category_sales[category][item_name]["quantity"] += qty
+                category_sales[category][item_name]["revenue"] += price * qty
+
+        all_sales[store_name] = store_orders
+        store_revenue[store_name] = round(store_total, 2)
+
+    sorted_category_sales = {
+        cat: dict(sorted(items.items(), key=lambda x: x[1]["quantity"], reverse=True))
+        for cat, items in category_sales.items()
+    }
+
+    average_order_value = total_revenue / total_orders if total_orders > 0 else 0
+
+    return render_template(
+        "sales_report.html",
+        all_sales=all_sales,
+        start_date=start_date,
+        end_date=end_date,
+        total_revenue=round(total_revenue, 2),
+        total_orders=total_orders,
+        total_items_sold=total_items_sold,
+        average_order_value=round(average_order_value, 2),
+        category_sales=sorted_category_sales,
+        store_revenue=store_revenue,
+        store_filter=store_filter,
+        stores=stores  # for dropdown options
+    )
+
+@app.route("/freezer_pack_needs", methods=["GET"])
+@login_required
+def freezer_pack_needs():
+    try:
+        db.session.execute("SELECT 1")
+    except Exception as e:
+        db.session.rollback()
+        print("🔁 Reconnected DB session:", e)
+
+    # Get date range from query params, default to last 7 days
+    today = datetime.utcnow().date()
+    start_date_str = request.args.get("start_date")
+    end_date_str = request.args.get("end_date")
+
+    if start_date_str and end_date_str:
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d").date()
+    else:
+        start_date = today - timedelta(days=7)
+        end_date = today
+
+    start_utc = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    end_utc = datetime.combine(end_date, datetime.max.time()).replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+
+    stores = ["Doncaster", "Lonsdale", "Clayton", "Glen Waverley"]
+    bingsu_flavor_sales = defaultdict(int)
+
+    for store in stores:
+        orders = fetch_sales_for_store(store, start_date=start_utc, end_date=end_utc)
+        for order in orders:
+            for item in order.get("line_items", []):
+                name = item.get("name", "")
+                if ITEM_CATEGORY_MAP.get(name) == "Bingsu":
+                    qty = int(item.get("quantity", 0))
+                    bingsu_flavor_sales[name] += qty
+
+    freezer_pack_ingredient = Ingredient.query.filter_by(name="Freezer Pack").first()
+    freezer_pack_stock = 0
+    if freezer_pack_ingredient:
+        latest_stocktake = (
+            Stocktake.query.filter_by(ingredient_id=freezer_pack_ingredient.id)
+            .order_by(Stocktake.timestamp.desc())
+            .first()
+        )
+        if latest_stocktake:
+            try:
+                freezer_pack_stock = float(latest_stocktake.quantity)
+            except ValueError:
+                freezer_pack_stock = 0
+
+    per_flavor_packs = {
+        flavor: round(qty_sold / 5.5, 2)
+        for flavor, qty_sold in bingsu_flavor_sales.items()
+    }
+
+    ingredients_by_flavor = {}
+    for flavor, packs_needed in per_flavor_packs.items():
+        recipe = Recipe.query.join(Recipe.output_item).filter(Ingredient.name == flavor).first()
+        if not recipe:
+            continue
+
+        ingredients = {}
+        for ri in RecipeIngredient.query.filter_by(recipe_id=recipe.id).all():
+            ing = Ingredient.query.get(ri.ingredient_id)
+            if not ing:
+                continue
+            total_grams = packs_needed * ri.grams_used
+            units_needed = total_grams / ing.grams_per_unit if ing.grams_per_unit else 0
+
+            ingredients[ing.name] = {
+                "grams_needed": round(total_grams, 2),
+                "units_to_purchase": round(units_needed, 2),
+                "supplier": ing.supplier,
+                "category": ing.category
+            }
+
+        ingredients_by_flavor[flavor] = ingredients
+
+    return render_template(
+        "freezer_pack_needs.html",
+        bingsu_flavor_sales=dict(bingsu_flavor_sales),
+        per_flavor_packs=per_flavor_packs,
+        current_stock=freezer_pack_stock,
+        ingredients_by_flavor=ingredients_by_flavor,
+        start_date=start_date.strftime("%Y-%m-%d"),
+        end_date=end_date.strftime("%Y-%m-%d")
+    )
+
+@app.route("/check_session")
+def check_session():
+    from flask_login import current_user
+    return jsonify({"active": current_user.is_authenticated})
+
+@app.route("/cashflow")
+@login_required
+def cashflow():
+    from sqlalchemy import func
+
+    # ✅ Sum prices of unpaid stock outs
+    unpaid_records = (
+        db.session.query(func.sum(StockOutRecord.price * StockOutRecord.quantity))
+        .filter(StockOutRecord.paid == False)
+        .scalar()
+    )
+
+    total_unpaid = float(unpaid_records or 0)
+
+    ingredients = Ingredient.query.order_by(Ingredient.name).all()
+    return render_template("cashflow.html", total_unpaid=total_unpaid, ingredients=ingredients)

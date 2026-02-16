@@ -1,0 +1,224 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">Manage Recipes</h2>
+    </div>
+
+    <!-- Success / Error Messages -->
+    <div id="recipeMessage" class="alert d-none mx-3"></div>
+
+    <!-- CREATE RECIPE CARD -->
+    <div class="card app-card mx-3 mb-4 p-4">
+        <h4 class="fw-bold mb-3">Create a New Recipe</h4>
+
+        <form id="recipeForm">
+
+            <!-- Output Item -->
+            <label class="form-label fw-semibold small-text">Select Output Item</label>
+            <select name="output_item" id="output_item" class="form-select mb-3" required>
+                <option value="" disabled selected>Select Output Item</option>
+                {% for ingredient in ingredients %}
+                <option value="{{ ingredient.id }}">{{ ingredient.name }}</option>
+                {% endfor %}
+            </select>
+
+            <!-- INGREDIENT LIST -->
+            <div id="ingredientsList">
+                <h5 class="fw-bold mb-3">Ingredients</h5>
+
+                <div class="ingredient-group border rounded-3 p-3 mb-3 bg-light">
+                    <label class="form-label fw-semibold small-text">Ingredient</label>
+                    <select name="ingredient_id[]" class="form-select mb-2" required>
+                        <option value="" disabled selected>Select Ingredient</option>
+                        {% for ing in ingredients %}
+                        <option value="{{ ing.id }}">{{ ing.name }}</option>
+                        {% endfor %}
+                    </select>
+
+                    <input type="number" name="grams_used[]" class="form-control mb-2"
+                           placeholder="Enter grams used" required>
+
+                    <button type="button" class="btn btn-outline-danger btn-sm remove-ingredient">
+                        Remove
+                    </button>
+                </div>
+            </div>
+
+            <button type="button" class="btn app-btn-secondary w-100 mb-3"
+                    onclick="addIngredientField()">+ Add More Ingredients</button>
+
+            <button type="submit" class="btn app-btn-primary w-100">
+                <span id="submitText">Save Recipe</span>
+                <span id="loadingSpinner" class="spinner-border spinner-border-sm d-none"></span>
+            </button>
+        </form>
+    </div>
+
+    <!-- EXISTING RECIPES LIST -->
+    <div class="card app-card mx-3 mb-5 p-4">
+        <h4 class="fw-bold mb-3">Existing Recipes</h4>
+
+        {% for recipe in recipes.values() %}
+        <div class="recipe-card p-3 mb-3 border rounded-3 shadow-sm bg-white"
+             onclick="toggleRecipe(this)">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <div class="fw-bold">{{ recipe.output_item_name }}</div>
+                    <div class="small-text text-muted">Recipe #{{ recipe.id }}</div>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-dark px-3 py-2">View</span>
+                </div>
+            </div>
+
+            <div class="recipe-details mt-3 p-3 bg-light rounded-3" style="display:none;">
+                <!-- Ingredients List -->
+                {% for ingredient in recipe.ingredients %}
+                <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                    <div class="fw-semibold">{{ ingredient.name }}</div>
+                    <div>{{ ingredient.quantity }} g</div>
+                </div>
+                {% endfor %}
+
+                <div class="d-flex gap-2 mt-3">
+
+                    <button class="btn app-btn-warning btn-sm w-100"
+                        onclick="event.stopPropagation(); editRecipe({{ recipe.id }}, '{{ recipe.output_item_name }}')">
+                        Edit
+                    </button>
+
+                    <button class="btn app-btn-danger btn-sm w-100"
+                        onclick="event.stopPropagation(); deleteRecipe({{ recipe.id }})">
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+</div>
+
+<!-- JS -->
+<script>
+function addIngredientField() {
+    let container = document.getElementById("ingredientsList");
+
+    let div = document.createElement("div");
+    div.classList.add("ingredient-group", "border", "rounded-3", "p-3", "mb-3", "bg-light");
+
+    div.innerHTML = `
+        <label class="form-label fw-semibold small-text">Ingredient</label>
+        <select name="ingredient_id[]" class="form-select mb-2" required>
+            <option value="" disabled selected>Select Ingredient</option>
+            {% for ing in ingredients %}
+            <option value="{{ ing.id }}">{{ ing.name }}</option>
+            {% endfor %}
+        </select>
+
+        <input type="number" name="grams_used[]" class="form-control mb-2"
+            placeholder="Enter grams used" required>
+
+        <button type="button" class="btn btn-outline-danger btn-sm remove-ingredient">Remove</button>
+    `;
+    container.appendChild(div);
+}
+
+document.addEventListener("click", function (event) {
+    if (event.target.classList.contains("remove-ingredient")) {
+        event.target.closest(".ingredient-group").remove();
+    }
+});
+
+document.getElementById("recipeForm").addEventListener("submit", function (event) {
+    event.preventDefault();
+
+    const submitButton = event.target.querySelector("button[type='submit']");
+    const submitText = document.getElementById("submitText");
+    const loadingSpinner = document.getElementById("loadingSpinner");
+    const messageBox = document.getElementById("recipeMessage");
+
+    submitButton.disabled = true;
+    submitText.classList.add("d-none");
+    loadingSpinner.classList.remove("d-none");
+
+    let formData = new FormData(this);
+
+    fetch("{{ url_for('manage_recipes') }}", { method: "POST", body: formData })
+        .then(res => res.json())
+        .then(data => {
+            messageBox.classList.remove("d-none");
+            if (data.success) {
+                messageBox.className = "alert alert-success mx-3";
+                messageBox.innerText = "✅ " + data.message;
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                messageBox.className = "alert alert-danger mx-3";
+                messageBox.innerText = "❌ " + data.message;
+            }
+        })
+        .catch(() => {
+            messageBox.className = "alert alert-danger mx-3";
+            messageBox.innerText = "❌ Unexpected error.";
+            messageBox.classList.remove("d-none");
+        })
+        .finally(() => {
+            submitButton.disabled = false;
+            submitText.classList.remove("d-none");
+            loadingSpinner.classList.add("d-none");
+        });
+});
+
+function toggleRecipe(card) {
+    let details = card.querySelector(".recipe-details");
+    details.style.display = details.style.display === "none" ? "block" : "none";
+}
+
+function deleteRecipe(id) {
+    if (!confirm("Delete this recipe?")) return;
+
+    fetch(`/delete_recipe/${id}`, { method: "POST" })
+        .then(res => res.json())
+        .then(data => {
+            alert(data.message);
+            if (data.success) location.reload();
+        });
+}
+
+function editRecipe(id, outputName) {
+    let outputSelect = document.getElementById("output_item");
+    [...outputSelect.options].forEach(opt => {
+        if (opt.text === outputName) opt.selected = true;
+    });
+
+    fetch(`/get_recipe/${id}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) return alert("Failed to load recipe.");
+
+            document.getElementById("ingredientsList").innerHTML = "";
+
+            data.ingredients.forEach(ing => {
+                addIngredientField();
+                let group = document.querySelector("#ingredientsList .ingredient-group:last-child");
+                group.querySelector("select").value = ing.id;
+                group.querySelector("input").value = ing.quantity;
+            });
+        });
+}
+</script>
+
+<!-- CSS -->
+<style>
+.small-text { font-size: 0.85rem; color: #6B7280; }
+.recipe-card { cursor: pointer; transition: .25s ease; }
+.recipe-card:hover { transform: translateY(-3px); box-shadow: 0 6px 20px rgba(0,0,0,.08);}
+.recipe-details { animation: fadeIn .3s ease; }
+@keyframes fadeIn { from {opacity:0; transform:translateY(-4px);} to {opacity:1; transform:translateY(0);} }
+</style>
+
+{% endblock %}

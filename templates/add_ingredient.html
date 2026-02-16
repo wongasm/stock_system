@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Add Ingredient</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+
+    {% extends "navbar.html" %}
+
+    {% block content %}
+    <div class="container">
+        <h2 class="text-center">Add Ingredient</h2>
+        <form action="{{ url_for('add_ingredient') }}" method="post" class="mx-auto" style="max-width: 500px;">
+            <div class="mb-3">
+                <label class="form-label">Name:</label>
+                <input type="text" name="name" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Quantity:</label>
+                <input type="number" name="quantity" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Unit:</label>
+                <input type="text" name="unit" class="form-control" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Supplier:</label>
+                <select name="supplier" class="form-control">
+                    <option value="">Select Supplier</option>
+                    {% for supplier in suppliers %}
+                    <option value="{{ supplier.name }}">{{ supplier.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Category:</label>
+                <select name="category" class="form-control">
+                    <option value="">Select Category</option>
+                    {% for category in categories %}
+                    <option value="{{ category.name }}">{{ category.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Grams/Unit:</label>
+                <input type="number" step="0.01" name="grams_per_unit" class="form-control" placeholder="Enter grams per unit">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Threshold:</label>
+                <input type="number" name="threshold" class="form-control" placeholder="Enter threshold quantity">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Price/Unit:</label>
+                <input type="number" step="0.01" name="price_per_unit" class="form-control" placeholder="Enter price per unit">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Selling Price:</label>
+                <input type="number" step="0.01" name="selling_price" class="form-control" placeholder="Enter selling price">
+            </div>
+            <div class="mb-3">
+                <label for="daily_stocktake" class="form-label">Include in Daily Stocktake:</label>
+                <select name="daily_stocktake" class="form-select">
+                    <option value="1" {% if ingredient and ingredient.daily_stocktake %}selected{% endif %}>Yes</option>
+                    <option value="0" {% if not ingredient.daily_stocktake %}selected{% endif %}>No</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="weekly_stocktake" class="form-label">Include in Weekly Stocktake:</label>
+                <select name="weekly_stocktake" class="form-select">
+                    <option value="1">Yes</option>
+                    <option value="0" selected>No</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Add Ingredient</button>
+            <a href="{{ url_for('index') }}" class="btn btn-secondary w-100 mt-2">Cancel</a>
+        </form>
+    </div>
+    {% endblock %}
+
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+</body>
+</html>

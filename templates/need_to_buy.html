@@ -1,0 +1,51 @@
+{% extends "navbar.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-3">Need to Buy</h2>
+
+    <!-- ✅ Supplier Filter -->
+    <form method="GET" action="{{ url_for('need_to_buy') }}" class="mb-3">
+        <label for="supplier" class="form-label">Filter by Supplier:</label>
+        <select name="supplier" id="supplier" class="form-select" onchange="this.form.submit()">
+            <option value="All Suppliers" {% if selected_supplier == "" or selected_supplier == "All Suppliers" %}selected{% endif %}>
+                All Suppliers
+            </option>
+            {% for supplier in suppliers %}
+            <option value="{{ supplier }}" {% if selected_supplier == supplier %}selected{% endif %}>
+                {{ supplier }}  <!-- ✅ Display only supplier name -->
+            </option>
+            {% endfor %}
+        </select>
+    </form>
+
+    {% if items_to_buy %}
+    <table class="table table-bordered table-striped">
+        <thead class="table-dark">
+            <tr>
+                <th>Ingredient</th>
+                <th>Current Stock</th>
+                <th>Threshold</th>
+                <th>Need to Buy</th>
+                <th>Supplier</th> <!-- ✅ Corrected Supplier Column -->
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items_to_buy %}
+            <tr class="table-danger"> <!-- ✅ Highlights rows where stock is needed -->
+                <td>{{ item.name }}</td>
+                <td>{{ "%.1f"|format(item.current_stock) }}</td>
+                <td>{{ "%.1f"|format(item.threshold) }}</td>
+                <td><strong>{{ "%.1f"|format(item.need_to_buy) }}</strong></td>
+                <td>{{ item.supplier }}</td> <!-- ✅ Display only supplier name -->
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="alert alert-success">
+        <strong>All ingredients are sufficiently stocked!</strong>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

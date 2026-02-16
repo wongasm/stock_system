@@ -1,0 +1,91 @@
+{% extends "navbar.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card shadow p-4">
+        <h2 class="text-center mb-4">Edit Ingredient</h2>
+        <form action="{{ url_for('update_ingredient', id=ingredient.id) }}" method="post">
+            <!-- Name Field -->
+            <div class="mb-3">
+                <label class="form-label">Name:</label>
+                <input type="text" name="name" class="form-control" value="{{ ingredient.name }}" required>
+            </div>
+
+            <!-- Quantity Field -->
+            <div class="mb-3">
+                <label class="form-label">Quantity:</label>
+                <input type="number" name="quantity" class="form-control" value="{{ ingredient.quantity }}" required>
+            </div>
+
+            <!-- Unit Field -->
+            <div class="mb-3">
+                <label class="form-label">Unit:</label>
+                <input type="text" name="unit" class="form-control" value="{{ ingredient.unit }}" required>
+            </div>
+
+            <!-- Supplier Dropdown (Fix: Ensure supplier is selected correctly) -->
+            <div class="mb-3">
+                <label class="form-label">Supplier:</label>
+                <select name="supplier" class="form-control">
+                    <option value="">Select Supplier</option>
+                    {% for supplier in suppliers %}
+                    <option value="{{ supplier.name }}" {% if ingredient.supplier == supplier.name %}selected{% endif %}>
+                        {{ supplier.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Category Field -->
+            <div class="mb-3">
+                <label class="form-label">Category:</label>
+                <select name="category" class="form-control">
+                    <option value="">Select Category</option>
+                    {% for category in categories %}
+                    <option value="{{ category.name }}" {% if ingredient.category == category.name %}selected{% endif %}>
+                        {{ category.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Grams Per Unit Field -->
+            <div class="mb-3">
+                <label class="form-label">Grams/Unit:</label>
+                <input type="number" step="0.01" name="grams_per_unit" class="form-control" value="{{ ingredient.grams_per_unit }}">
+            </div>
+
+            <!-- Threshold Field -->
+            <div class="mb-3">
+                <label class="form-label">Threshold:</label>
+                <input type="number" name="threshold" class="form-control" value="{{ ingredient.threshold }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Price/Unit:</label>
+                <input type="number" step="0.01" name="price_per_unit" class="form-control" value="{{ ingredient.price_per_unit }}">
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Selling Price:</label>
+                <input type="number" step="0.01" name="selling_price" class="form-control" value="{{ ingredient.selling_price }}">
+            </div>
+            <div class="mb-3">
+                <label for="daily_stocktake">Daily Stocktake:</label>
+                <select name="daily_stocktake" class="form-select">
+                    <option value="1" {% if ingredient.daily_stocktake == True %}selected{% endif %}>Yes</option>
+                    <option value="0" {% if ingredient.daily_stocktake == False %}selected{% endif %}>No</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label for="weekly_stocktake" class="form-label">Include in Weekly Stocktake:</label>
+                <select name="weekly_stocktake" class="form-select">
+                    <option value="1" {% if ingredient.weekly_stocktake %}selected{% endif %}>Yes</option>
+                    <option value="0" {% if not ingredient.weekly_stocktake %}selected{% endif %}>No</option>
+                </select>
+            </div>
+            <!-- Buttons -->
+            <button type="submit" class="btn btn-primary w-100">Save Changes</button>
+            <a href="{{ url_for('index') }}" class="btn btn-secondary w-100 mt-2">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

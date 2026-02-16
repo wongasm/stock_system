@@ -1,0 +1,182 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">Quantity Made</h2>
+    </div>
+
+    <!-- SUCCESS / ERROR MESSAGE -->
+    <div id="quantityMadeMessage" class="alert d-none mx-3"></div>
+
+    <!-- QUANTITY MADE FORM CARD -->
+    <div class="card app-card mx-3 mb-4 p-4">
+
+        <h4 class="fw-bold mb-3">Record Quantity Made</h4>
+
+        <form id="quantityMadeForm">
+
+            <!-- Recipe Selection -->
+            <label class="form-label fw-semibold small-text">Select Recipe</label>
+            <select id="recipe_id" name="recipe_id" class="form-select mb-3" required>
+                <option value="" disabled selected>Select Recipe</option>
+                {% for recipe in recipes %}
+                <option value="{{ recipe.id }}">{{ recipe.output_item.name }}</option>
+                {% endfor %}
+            </select>
+
+            <!-- Quantity Made -->
+            <label class="form-label fw-semibold small-text">Quantity Made</label>
+            <input type="number" step="0.1" id="quantity_made" name="quantity_made"
+                   class="form-control mb-4" placeholder="Enter quantity made" required>
+
+            <button type="submit" class="btn app-btn-primary w-100">
+                <span id="submitText">Submit</span>
+                <span id="loadingSpinner" class="spinner-border spinner-border-sm d-none"></span>
+            </button>
+
+        </form>
+    </div>
+
+    <!-- CURRENT STOCK CARD -->
+    <div class="card app-card mx-3 mb-5 p-4">
+        <h4 class="fw-bold mb-3">Current Stock</h4>
+
+        <!-- MOBILE CARD VERSION -->
+        <div class="d-md-none">
+            {% for ingredient in ingredients %}
+            <div class="stock-card border rounded-3 p-3 mb-3 bg-white shadow-sm">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <div class="fw-bold">{{ ingredient.name }}</div>
+                        <div class="small-text text-muted">ID: {{ ingredient.id }}</div>
+                    </div>
+                    <div class="text-end fw-bold text-primary">
+                        {{ ingredient.quantity }} {{ ingredient.unit }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- DESKTOP TABLE VERSION -->
+        <div class="table-responsive d-none d-md-block">
+            <table class="table app-table table-hover mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Quantity</th>
+                        <th>Unit</th>
+                    </tr>
+                </thead>
+
+                <tbody id="stockTableBody">
+                    {% for ingredient in ingredients %}
+                    <tr id="ingredient-{{ ingredient.id }}">
+                        <td>{{ ingredient.id }}</td>
+                        <td>{{ ingredient.name }}</td>
+                        <td class="stock-quantity">{{ ingredient.quantity }}</td>
+                        <td>{{ ingredient.unit }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+
+</div>
+
+<!-- JS -->
+<script>
+document.getElementById("quantityMadeForm").addEventListener("submit", function(event) {
+    event.preventDefault();
+
+    const messageBox = document.getElementById("quantityMadeMessage");
+    const submitButton = event.target.querySelector("button[type='submit']");
+    const submitText = document.getElementById("submitText");
+    const loadingSpinner = document.getElementById("loadingSpinner");
+
+    const recipeId = document.getElementById("recipe_id").value;
+    const quantityMade = document.getElementById("quantity_made").value;
+
+    if (!recipeId || !quantityMade) {
+        messageBox.className = "alert alert-danger mx-3";
+        messageBox.innerText = "❌ Please select a recipe and enter a quantity.";
+        messageBox.classList.remove("d-none");
+        return;
+    }
+
+    submitButton.disabled = true;
+    submitText.classList.add("d-none");
+    loadingSpinner.classList.remove("d-none");
+
+    fetch("{{ url_for('quantity_made') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ recipe_id: recipeId, quantity_made: quantityMade }),
+    })
+    .then(res => res.json())
+    .then(data => {
+        messageBox.classList.remove("d-none");
+
+        if (data.success) {
+            messageBox.className = "alert alert-success mx-3";
+            messageBox.innerText = "✅ " + data.message;
+            document.getElementById("quantityMadeForm").reset();
+            updateStockTable();
+        } else {
+            messageBox.className = "alert alert-danger mx-3";
+            messageBox.innerText = "❌ " + data.message;
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        messageBox.className = "alert alert-danger mx-3";
+        messageBox.innerText = "❌ Unexpected error occurred.";
+        messageBox.classList.remove("d-none");
+    })
+    .finally(() => {
+        submitButton.disabled = false;
+        submitText.classList.remove("d-none");
+        loadingSpinner.classList.add("d-none");
+    });
+});
+
+function updateStockTable() {
+    fetch("{{ url_for('get_stock_data') }}")
+        .then(res => res.json())
+        .then(data => {
+            data.ingredients.forEach(ingredient => {
+                let row = document.getElementById(`ingredient-${ingredient.id}`);
+                if (row) {
+                    row.querySelector(".stock-quantity").innerText = ingredient.quantity;
+                }
+            });
+        })
+        .catch(err => console.error("Error updating stock:", err));
+}
+</script>
+
+<!-- CSS -->
+<style>
+.small-text { font-size: 0.85rem; color: #6B7280; }
+
+.stock-card {
+    transition: 0.25s ease;
+}
+.stock-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+}
+
+.app-thead {
+    background: #111827 !important;
+    color: white !important;
+}
+</style>
+
+{% endblock %}

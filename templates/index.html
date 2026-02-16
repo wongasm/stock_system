@@ -1,0 +1,259 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- Page Title -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">Ingredient List</h2>
+        <a href="{{ url_for('add_ingredient_page') }}" class="btn app-btn-primary app-btn-add">
+            + Add Ingredient
+        </a>
+    </div>
+
+    <!-- Filter + Stock Card -->
+    <div class="card app-card mb-4 mx-3 p-3">
+        <div class="row g-3 align-items-end">
+
+            <!-- Filter Form -->
+            <form method="get" action="{{ url_for('index') }}" class="row g-3 col-lg-9">
+
+                <div class="col-md-4 col-6">
+                    <label class="form-label fw-semibold small-text">Filter By</label>
+                    <select id="filter_by" name="filter_by" class="form-select" onchange="updateFilterOptions()">
+                        <option value="" {% if not request.args.get('filter_by') %}selected{% endif %}>Select Filter</option>
+                        <option value="category" {% if request.args.get('filter_by') == 'category' %}selected{% endif %}>Category</option>
+                        <option value="supplier" {% if request.args.get('filter_by') == 'supplier' %}selected{% endif %}>Supplier</option>
+                    </select>
+                </div>
+
+                <div class="col-md-4 col-6">
+                    <label class="form-label fw-semibold small-text">Filter Value</label>
+                    <select id="filter_value" name="filter_value" class="form-select">
+                        <option value="" {% if not request.args.get('filter_value') %}selected{% endif %}>Select Value</option>
+
+                        {% if request.args.get('filter_by') == 'category' %}
+                            {% for category in categories %}
+                                <option value="{{ category.name }}" {% if request.args.get('filter_value') == category.name %}selected{% endif %}>
+                                    {{ category.name }}
+                                </option>
+                            {% endfor %}
+                        {% elif request.args.get('filter_by') == 'supplier' %}
+                            {% for supplier in suppliers %}
+                                <option value="{{ supplier.name }}" {% if request.args.get('filter_value') == supplier.name %}selected{% endif %}>
+                                    {{ supplier.name }}
+                                </option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+
+                <div class="col-md-4 col-12 d-flex gap-2">
+                    <button type="submit" class="btn app-btn-primary app-btn app-btn-auto">Apply</button>
+                    <a href="{{ url_for('index') }}" class="btn app-btn-secondary app-btn app-btn-auto">Reset</a>
+                </div>
+
+            </form>
+
+            <!-- Total Stock Value -->
+            <div class="col-lg-3 text-lg-end text-center mt-3 mt-lg-0">
+                <div class="fw-semibold text-success small-text">Total Stock Value</div>
+                <div class="fw-bold fs-4">
+                    {% if total_stock_value is not none %}
+                        ${{ "%.2f"|format(total_stock_value) }}
+                    {% else %}
+                        $0.00
+                    {% endif %}
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Table Section -->
+    <div class="card app-card mb-5 mx-3">
+        <div class="table-responsive app-table-container">
+            <table class="table table-hover app-table mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Name</th>
+                        <th class="d-none d-md-table-cell">Quantity</th>
+                        <th class="d-none d-md-table-cell">Supplier</th>
+                        <th class="d-none d-md-table-cell">Category</th>
+                        <th class="d-none d-md-table-cell">Price/Unit</th>
+                        <th class="d-none d-md-table-cell">Selling Price</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for ingredient in ingredients %}
+                    <tr class="app-row" onclick="toggleDetails(this)">
+                        <td class="fw-semibold">
+                            {{ ingredient.name }}
+
+                            <div class="d-md-none small text-muted mt-1">
+                                Qty:
+                                {% if ingredient.quantity is not none %}
+                                    {{ "%.1f"|format(ingredient.quantity) }}
+                                {% else %} N/A {% endif %}
+                            </div>
+                        </td>
+
+                        <td class="d-none d-md-table-cell">
+                            {% if ingredient.quantity is not none %}
+                                {{ "%.1f"|format(ingredient.quantity) }}
+                            {% else %} N/A {% endif %}
+                        </td>
+
+                        <td class="d-none d-md-table-cell">{{ ingredient.supplier or "N/A" }}</td>
+                        <td class="d-none d-md-table-cell">{{ ingredient.category or "N/A" }}</td>
+
+                        <td class="d-none d-md-table-cell">
+                            {% if ingredient.price_per_unit is not none %}
+                                ${{ "%.2f"|format(ingredient.price_per_unit) }}
+                            {% else %} N/A {% endif %}
+                        </td>
+
+                        <td class="d-none d-md-table-cell">
+                            {% if ingredient.selling_price is not none %}
+                                ${{ "%.2f"|format(ingredient.selling_price) }}
+                            {% else %} N/A {% endif %}
+                        </td>
+
+                        <!-- ACTIONS (DESKTOP) -->
+                        <td class="text-end" style="white-space: nowrap;">
+                            <a href="{{ url_for('edit_ingredient', id=ingredient.id) }}"
+                               class="btn app-btn-warning btn-sm"
+                               onclick="event.stopPropagation();">
+                                Edit
+                            </a>
+
+                            <form method="POST"
+                                  action="{{ url_for('archive_ingredient', id=ingredient.id) }}"
+                                  class="d-inline">
+                                <button type="submit"
+                                        class="btn app-btn-danger btn-sm"
+                                        onclick="event.stopPropagation(); return confirm('Archive this ingredient?');">
+                                    Archive
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+
+                    <!-- MOBILE DETAILS -->
+                    <tr class="details-row d-md-none">
+                        <td colspan="8">
+                            <div class="details-box">
+
+                                <div><strong>Quantity:</strong>
+                                    {{ "%.1f"|format(ingredient.quantity) if ingredient.quantity is not none else "N/A" }}
+                                </div>
+
+                                <div><strong>Unit:</strong> {{ ingredient.unit or "N/A" }}</div>
+                                <div><strong>Supplier:</strong> {{ ingredient.supplier or "N/A" }}</div>
+                                <div><strong>Category:</strong> {{ ingredient.category or "N/A" }}</div>
+
+                                <div><strong>Grams/Unit:</strong>
+                                    {{ "%.1f"|format(ingredient.grams_per_unit) if ingredient.grams_per_unit is not none else "N/A" }}
+                                </div>
+
+                                <div><strong>Threshold:</strong>
+                                    {{ "%.1f"|format(ingredient.threshold) if ingredient.threshold is not none else "N/A" }}
+                                </div>
+
+                                <div><strong>Price:</strong>
+                                    {{ "$%.2f"|format(ingredient.price_per_unit) if ingredient.price_per_unit is not none else "N/A" }}
+                                </div>
+
+                                <div><strong>Selling:</strong>
+                                    {{ "$%.2f"|format(ingredient.selling_price) if ingredient.selling_price is not none else "N/A" }}
+                                </div>
+
+                                <form method="POST"
+                                      action="{{ url_for('archive_ingredient', id=ingredient.id) }}"
+                                      class="mt-2">
+                                    <button type="submit"
+                                            class="btn app-btn-danger btn-sm w-100"
+                                            onclick="event.stopPropagation(); return confirm('Archive this ingredient?');">
+                                        Archive
+                                    </button>
+                                </form>
+
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<!-- JS -->
+<script>
+function updateFilterOptions() {
+    document.querySelector("form").submit();
+}
+
+function toggleDetails(row) {
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains("details-row")) {
+        next.style.display = next.style.display === "table-row" ? "none" : "table-row";
+    }
+}
+</script>
+
+<!-- CSS -->
+<style>
+.details-row { display: none; }
+
+body {
+    background: #F5F7FA;
+    color: #111827;
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro", sans-serif;
+}
+
+.app-card {
+    border-radius: 18px;
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+}
+
+.app-btn-auto {
+    height: 42px !important;
+    padding: 0 14px !important;
+    font-size: 0.85rem !important;
+    border-radius: 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+.app-btn-primary {
+    background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
+    color: #fff !important;
+}
+
+.app-btn-secondary {
+    background: #EEF1F5 !important;
+    color: #374151 !important;
+}
+
+.details-box {
+    background: #ffffff;
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px solid #E5E7EB;
+}
+
+.app-thead {
+    background: #111827 !important;
+    color: #fff !important;
+}
+</style>
+
+{% endblock %}

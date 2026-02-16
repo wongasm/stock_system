@@ -1,0 +1,203 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">Stock Out History</h2>
+    </div>
+
+    <!-- FILTER CARD -->
+    <div class="card app-card mx-3 mb-4 p-4">
+        <h5 class="fw-bold mb-3">Filter Records</h5>
+
+        <form method="get" class="row g-3 align-items-end">
+
+            <div class="col-md-3 col-12">
+                <label class="form-label small-text fw-semibold">Filter by Store</label>
+                <select id="store" name="store" class="form-select">
+                    <option value="">All Stores</option>
+                    {% for s in ['Doncaster','Lonsdale','Clayton','Glen Waverley','Central Kitchen'] %}
+                    <option value="{{ s }}" {% if selected_store == s %}selected{% endif %}>{{ s }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-3 col-12">
+                <label class="form-label small-text fw-semibold">Start Date</label>
+                <input type="date" id="start_date" name="start_date" value="{{ start_date }}" class="form-control">
+            </div>
+
+            <div class="col-md-3 col-12">
+                <label class="form-label small-text fw-semibold">End Date</label>
+                <input type="date" id="end_date" name="end_date" value="{{ end_date }}" class="form-control">
+            </div>
+
+            <div class="col-md-3 col-12">
+                <button type="submit" class="btn app-btn-primary w-100 mb-2">Apply Filter</button>
+                <a href="{{ url_for('stock_out_history') }}" class="btn app-btn-secondary w-100">Clear</a>
+            </div>
+
+        </form>
+    </div>
+
+    <!-- TOTALS -->
+    <div class="mx-3 d-flex justify-content-end mb-3">
+        <div class="p-3 rounded-3 shadow-sm bg-white border d-inline-block text-end">
+            <div class="fw-bold text-success">Total Cost Value: ${{ "%.2f"|format(total_cost_value) }}</div>
+            <div class="fw-bold text-primary">Total Selling Value: ${{ "%.2f"|format(total_selling_value) }}</div>
+        </div>
+    </div>
+
+    <!-- MOBILE CARD VIEW -->
+    <div class="d-md-none mx-3">
+
+        {% for inv in invoices %}
+        <div class="card app-card invoice-card mb-3" onclick="toggleInvoiceDetails(this)">
+            <div class="p-3 d-flex justify-content-between">
+                <div>
+                    <div class="fw-bold">{{ inv.store }}</div>
+                    <div class="small-text">{{ inv.date }}</div>
+                </div>
+                <div class="text-end">
+                    <div class="badge bg-dark px-3 py-2 rounded-pill">{{ inv.invoice_no }}</div>
+                    <div class="fw-bold text-success mt-2">
+                        ${{ "%.2f"|format(inv.total_cost) }}
+                    </div>
+                </div>
+            </div>
+
+            <!-- EXPANDABLE DETAILS -->
+            <div class="invoice-details p-3" style="display: none;">
+                <h6 class="fw-bold mb-2">Invoice Breakdown</h6>
+
+                {% for item in inv['items'] %}
+                <div class="d-flex justify-content-between mb-2">
+                    <div>
+                        <div class="fw-semibold">{{ item.item }}</div>
+                        <div class="small-text text-muted">
+                            Qty: {{ "%.1f"|format(item.quantity) }}
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <div class="small-text">Cost: ${{ "%.2f"|format(item.price or 0) }}</div>
+                        <div class="fw-bold text-success">Total: ${{ "%.2f"|format(item.total_cost) }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+
+                <hr>
+
+                <div class="fw-bold text-success">
+                    Total Cost: ${{ "%.2f"|format(inv.total_cost) }}
+                </div>
+                <div class="fw-bold text-primary">
+                    Total Selling: ${{ "%.2f"|format(inv.total_selling) }}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+    </div>
+
+    <!-- DESKTOP TABLE VIEW -->
+    <div class="card app-card mx-3 mt-4 mb-5 p-4 d-none d-md-block">
+
+        <h5 class="fw-bold mb-3">Stock Out Records</h5>
+
+        <div class="table-responsive app-table-container" style="max-height: 70vh; overflow-y: auto;">
+            <table class="table app-table table-hover mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Invoice</th>
+                        <th>Date</th>
+                        <th>Store</th>
+                        <th>Total Cost</th>
+                        <th>Total Selling</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for inv in invoices %}
+                    <tr>
+                        <td>{{ inv.invoice_no }}</td>
+                        <td>{{ inv.date }}</td>
+                        <td>{{ inv.store }}</td>
+                        <td>${{ "%.2f"|format(inv.total_cost) }}</td>
+                        <td>${{ "%.2f"|format(inv.total_selling) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+
+            </table>
+        </div>
+
+    </div>
+
+</div>
+
+<!-- JS -->
+<script>
+function toggleInvoiceDetails(card) {
+    const details = card.querySelector(".invoice-details");
+    details.style.display = details.style.display === "none" ? "block" : "none";
+}
+</script>
+
+<!-- CSS -->
+<style>
+
+.invoice-card {
+    cursor: pointer;
+    transition: 0.25s ease;
+}
+
+.invoice-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+}
+
+.invoice-details {
+    background: #F9FAFB;
+    border-radius: 14px;
+    border: 1px solid #E5E7EB;
+}
+
+/* General Styling */
+body {
+    background: #F5F7FA;
+    font-family: Inter, -apple-system, BlinkMacSystemFont;
+}
+
+.app-card {
+    border-radius: 18px;
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+}
+
+.app-btn-primary {
+    background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
+    color: white !important;
+    border-radius: 12px !important;
+}
+
+.app-btn-secondary {
+    background: #EEF1F5 !important;
+    color: #374151 !important;
+}
+
+.small-text {
+    font-size: 0.85rem;
+    color: #6B7280;
+}
+
+.app-thead {
+    background: #111827 !important;
+    color: white !important;
+}
+
+</style>
+
+{% endblock %}

@@ -1,0 +1,112 @@
+{% extends "user_navbar.html" %}
+
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">Past Daily Stocktakes</h2>
+    </div>
+
+    <!-- TABLE CARD -->
+    <div class="card app-card mx-3 p-4">
+
+        <div class="table-responsive">
+            <table class="table app-table table-bordered table-striped align-middle text-center w-100">
+                <thead class="app-thead">
+                    <tr>
+                        <th class="text-start sticky-col" style="left: 0; z-index: 3;">Ingredient</th>
+                        {% for date in dates %}
+                            <th>{{ date }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for ingredient in ingredient_names %}
+                    <tr>
+                        <td class="text-start fw-bold sticky-col bg-white" style="left: 0; z-index: 2;">
+                            {{ ingredient }}
+                        </td>
+
+                        {% for date in dates %}
+                            <td>{{ data.get(date, {}).get(ingredient, "") }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+
+            </table>
+        </div>
+
+    </div>
+</div>
+
+<!-- STYLES -->
+<style>
+    body {
+        background: #F5F7FA !important;
+    }
+
+    .app-card {
+        border-radius: 18px;
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.07);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+    }
+
+    .app-thead {
+        background: #111827 !important;
+        color: white !important;
+    }
+
+    .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .table th, .table td {
+        white-space: nowrap;
+        text-align: center;
+        vertical-align: middle;
+    }
+
+    /* Sticky first column */
+    .sticky-col {
+        position: sticky;
+        background: white;
+        border-right: 2px solid #ddd;
+    }
+
+    .table td:first-child,
+    .table th:first-child {
+        min-width: 160px;
+        font-weight: 600;
+    }
+
+    /* Header row sticky */
+    .table thead th {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+    }
+
+    /* Mobile scroll hint */
+    @media (max-width: 768px) {
+        .table-responsive::after {
+            content: "Swipe → to view more";
+            display: block;
+            font-size: 0.85rem;
+            color: #666;
+            padding: 0.5rem;
+            text-align: right;
+        }
+        .table td:first-child,
+        .table th:first-child {
+            min-width: 120px;
+        }
+    }
+</style>
+
+{% endblock %}

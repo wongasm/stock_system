@@ -1,0 +1,145 @@
+{% extends "navbar.html" %}
+
+{% block content %}
+<div class="container">
+    <h2>Manage Store Thresholds</h2>
+
+    <!-- ✅ Store Filter Dropdown -->
+    <div class="mb-3">
+        <label for="filterStore" class="form-label">Filter by Store:</label>
+        <select id="filterStore" class="form-control">
+            <option value="all">All Stores</option>
+            {% for store in stores %}
+                <option value="{{ store.username }}">{{ store.username }}</option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <!-- ✅ Form to Add a New Threshold -->
+    <form id="thresholdForm" method="POST" action="{{ url_for('manage_thresholds') }}" class="mb-3">
+        <div class="row">
+            <div class="col-md-4">
+                <label for="store_id">Select Store:</label>
+                <select name="store_id" class="form-control">
+                    {% for store in stores %}
+                        <option value="{{ store.id }}">{{ store.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-4">
+                <label for="ingredient_id">Select Ingredient:</label>
+                <select name="ingredient_id" class="form-control select2">
+                    <option value="">Search and select an ingredient...</option>
+                    {% for ingredient in ingredients %}
+                        <option value="{{ ingredient.id }}">{{ ingredient.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-4">
+                <label for="threshold">Set Threshold:</label>
+                <input type="number" name="threshold" class="form-control" required step="0.1">
+            </div>
+
+            <div class="col-md-12 text-center mt-3">
+                <button type="submit" class="btn btn-primary btn-lg">Save Threshold</button>
+            </div>
+        </div>
+        <!-- ✅ Error Message Display for Duplicate Entries -->
+        <div id="thresholdError" class="alert alert-danger mt-3 d-none"></div>
+    </form>
+
+    <!-- ✅ Display Existing Thresholds with Inline Edit/Delete -->
+    <h3>Existing Thresholds</h3>
+    <table class="table table-striped" id="thresholdTable">
+        <thead>
+            <tr>
+                <th>Store</th>
+                <th>Ingredient</th>
+                <th>Threshold</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for threshold in thresholds %}
+            <tr data-store="{{ threshold.store_name }}" data-ingredient="{{ threshold.ingredient_name }}">
+                <td>{{ threshold.store_name }}</td>
+                <td>{{ threshold.ingredient_name }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('update_threshold', id=threshold['id']) }}" class="d-inline-flex align-items-center">
+                        <input type="number" name="new_threshold" value="{{ threshold['threshold'] }}" step="0.1" class="form-control me-2" style="width: 100px;">
+                        <button type="submit" class="btn btn-success btn-sm px-3"><i class="fas fa-save"></i> Save</button>
+                    </form>
+                </td>
+                <td>
+                    <form method="POST" action="{{ url_for('delete_threshold', id=threshold['id']) }}" class="d-inline">
+                        <button type="submit" class="btn btn-danger btn-sm px-3" onclick="return confirm('Are you sure you want to delete this threshold?');">
+                            <i class="fas fa-trash"></i> Delete
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- ✅ Include Select2 Library -->
+<link href="https://cdn.jsdelivr.net/npm/select2@4.0.13/dist/css/select2.min.css" rel="stylesheet" />
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.0.13/dist/js/select2.min.js"></script>
+
+<!-- ✅ JavaScript for Enhancements -->
+<script>
+    $(document).ready(function () {
+        // ✅ Enable Select2 for Ingredient Dropdown
+        $(".select2").select2({
+            width: '100%',
+            placeholder: "Search and select an ingredient...",
+            allowClear: true
+        });
+
+        // ✅ Filter Table by Store Selection
+        $("#filterStore").on("change", function () {
+            let selectedStore = $(this).val().toLowerCase();
+
+            $("#thresholdTable tbody tr").each(function () {
+                let rowStore = $(this).data("store").toLowerCase();
+                if (selectedStore === "all" || rowStore === selectedStore) {
+                    $(this).show();
+                } else {
+                    $(this).hide();
+                }
+            });
+        });
+
+        // ✅ Prevent Duplicate Thresholds Before Submitting Form
+        $("#thresholdForm").on("submit", function (event) {
+            let selectedStore = $("select[name='store_id']").find(":selected").text().trim();
+            let selectedIngredient = $("select[name='ingredient_id']").find(":selected").text().trim();
+            let errorMessage = $("#thresholdError");
+
+            let duplicateFound = false;
+            $("#thresholdTable tbody tr").each(function () {
+                let rowStore = $(this).data("store").trim();
+                let rowIngredient = $(this).data("ingredient").trim();
+
+                if (rowStore === selectedStore && rowIngredient === selectedIngredient) {
+                    duplicateFound = true;
+                    return false;  // Break out of loop
+                }
+            });
+
+            if (duplicateFound) {
+                event.preventDefault();  // Stop form submission
+                errorMessage.text("❌ Threshold for this ingredient already exists for the selected store.");
+                errorMessage.removeClass("d-none");
+            } else {
+                errorMessage.addClass("d-none");
+            }
+        });
+    });
+</script>
+
+{% endblock %}

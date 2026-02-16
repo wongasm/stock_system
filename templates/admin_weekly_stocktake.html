@@ -1,0 +1,177 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">📅 Weekly Stock Take Records</h2>
+    </div>
+
+    <!-- FILTER CARD -->
+    <div class="card app-card mx-3 mb-4 p-4">
+        <h5 class="fw-bold mb-3">Filter Records</h5>
+
+        <form method="GET" action="{{ url_for('admin_weekly_stocktake') }}" class="row g-3 align-items-end">
+
+            <!-- Date -->
+            <div class="col-md-4 col-12">
+                <label class="form-label small-text fw-semibold">Select Date</label>
+                <input type="date" name="date" class="form-control" value="{{ selected_date }}">
+            </div>
+
+            <!-- Store -->
+            <div class="col-md-4 col-12">
+                <label class="form-label small-text fw-semibold">Select Store</label>
+                <select name="store" class="form-select">
+                    <option value="all">All Stores</option>
+                    {% for store in stores %}
+                        <option value="{{ store.id }}" {% if store.id|string == selected_store %}selected{% endif %}>
+                            {{ store.username }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Filter Button -->
+            <div class="col-md-4 col-12">
+                <button type="submit" class="btn app-btn-primary w-100">Apply Filter</button>
+            </div>
+
+        </form>
+    </div>
+
+
+    {% if selected_store != "all" %}
+
+    <!-- WEEKLY TABLE + STOCK OUT PREP -->
+    <form method="POST" action="{{ url_for('prepare_stock_out') }}"
+          class="card app-card mx-3 mb-5 p-4">
+
+        <input type="hidden" name="store_id" value="{{ selected_store }}">
+        <input type="hidden" name="date" value="{{ selected_date }}">
+
+        <h5 class="fw-bold mb-3">Weekly Stock Levels</h5>
+
+        <div class="table-responsive app-table-container" style="max-height: 70vh; overflow-y:auto;">
+            <table class="table app-table table-bordered align-middle mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Store</th>
+                        <th>Ingredient</th>
+                        <th>Stock On Hand</th>
+                        <th>Threshold</th>
+                        <th>Stock Needed</th>
+                        <th>Date Recorded</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for stock in stocktakes %}
+                    <tr>
+                        <td class="fw-semibold">{{ stock.store_name }}</td>
+
+                        <td>
+                            {{ stock.ingredient_name }}
+                            <input type="hidden" name="ingredient_names[]" value="{{ stock.ingredient_name }}">
+                        </td>
+
+                        <td>
+                            {% if stock.quantity_on_hand in ["Enough in store", "Not enough in store", "Invalid"] %}
+                                {{ stock.quantity_on_hand }}
+                            {% else %}
+                                {{ stock.quantity_on_hand }} units
+                            {% endif %}
+                        </td>
+
+                        <td>{{ stock.threshold }}</td>
+
+                        <td>
+                            <input type="number"
+                                   name="stock_needed[]"
+                                   class="form-control text-center"
+                                   value="{{ stock.needed_stock | round(1) }}"
+                                   step="0.1"
+                                   min="0"
+                                   style="max-width: 90px; margin:auto;">
+                        </td>
+
+                        <td>{{ stock.date_recorded }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <button type="submit" class="btn app-btn-danger w-100 mt-4 fs-5">
+            🚚 Send to Stock Out
+        </button>
+
+    </form>
+
+    {% else %}
+
+    <div class="mx-3 mt-4 alert alert-info">
+        Please select a store to prepare stock out.
+    </div>
+
+    {% endif %}
+
+</div>
+
+<!-- STYLES -->
+<style>
+    body {
+        background: #F5F7FA;
+        font-family: Inter, -apple-system, BlinkMacSystemFont;
+    }
+
+    .app-card {
+        border-radius: 18px;
+        background: white;
+        border: 1px solid rgba(0,0,0,0.05);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+    }
+
+    .app-btn-primary {
+        background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
+        color: #fff !important;
+        border-radius: 12px !important;
+        padding: 10px !important;
+        font-weight: 600;
+    }
+
+    .app-btn-danger {
+        background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+        color: #fff !important;
+        border-radius: 12px !important;
+        padding: 12px !important;
+        font-weight: 600;
+    }
+
+    .small-text {
+        font-size: 0.85rem;
+        color: #6B7280;
+    }
+
+    .app-table-container {
+        border-radius: 14px;
+        overflow: hidden;
+    }
+
+    .app-thead {
+        background: #111827 !important;
+        color: white !important;
+    }
+
+    .app-table tbody tr {
+        background: white;
+    }
+
+    .app-table td, .app-table th {
+        vertical-align: middle !important;
+        text-align: center;
+    }
+</style>
+
+{% endblock %}

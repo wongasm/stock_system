@@ -1,0 +1,49 @@
+{% extends "user_navbar.html" %}
+
+{% block content %}
+<div class="container">
+    <h2 class="mb-4">Past Weekly Stocktakes</h2>
+
+    <div class="table-responsive" style="overflow-x: auto;">
+        <table class="table table-bordered table-striped align-middle text-center" id="stocktake-table">
+            <thead class="table-dark">
+                <tr>
+                    <th class="freeze-col">Ingredient</th>
+                    {% for date in dates %}
+                        <th>{{ date }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for ingredient in ingredient_names %}
+                <tr>
+                    <td class="text-start fw-bold freeze-col">{{ ingredient }}</td>
+                    {% for date in dates %}
+                        <td>
+                            {{ data.get(date, {}).get(ingredient, '') }}
+                        </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+/* ✅ Make the first column sticky/frozen */
+#stocktake-table th.freeze-col,
+#stocktake-table td.freeze-col {
+    position: sticky;
+    left: 0;
+    background-color: #fff;
+    z-index: 1;
+    border-right: 2px solid #dee2e6;
+}
+#stocktake-table th.freeze-col {
+    z-index: 2; /* On top of other cells */
+    background-color: #343a40;
+    color: white;
+}
+</style>
+{% endblock %}

@@ -1,0 +1,243 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">Reports</h2>
+    </div>
+
+    <!-- REPORT TYPE TABS -->
+    <div class="card app-card mx-3 p-3 mb-3">
+        <div class="btn-group w-100">
+            <a href="{{ url_for('reporting_page', report_type='sales', date_range=selected_range) }}"
+               class="btn tab-btn {% if report_type == 'sales' %}active{% endif %}">
+                Item Breakdown
+            </a>
+
+            <a href="{{ url_for('reporting_page', report_type='gross_profit', date_range=selected_range) }}"
+               class="btn tab-btn {% if report_type == 'gross_profit' %}active{% endif %}">
+                Gross Profit
+            </a>
+        </div>
+    </div>
+
+    <!-- DATE RANGE PICKER -->
+    <div class="card app-card mx-3 p-3 mb-4">
+        <form method="get" class="row g-2 align-items-end">
+            <input type="hidden" name="report_type" value="{{ report_type }}">
+
+            <div class="col-md-6">
+                <div class="btn-group w-100">
+                    <a href="{{ url_for('reporting_page', report_type=report_type, date_range='weekly') }}"
+                       class="btn range-btn {% if selected_range == 'weekly' %}active{% endif %}">
+                        Weekly
+                    </a>
+                    <a href="{{ url_for('reporting_page', report_type=report_type, date_range='monthly') }}"
+                       class="btn range-btn {% if selected_range == 'monthly' %}active{% endif %}">
+                        Monthly
+                    </a>
+                    <a href="{{ url_for('reporting_page', report_type=report_type, date_range='quarterly') }}"
+                       class="btn range-btn {% if selected_range == 'quarterly' %}active{% endif %}">
+                        Quarterly
+                    </a>
+                </div>
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label small">From</label>
+                <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+            </div>
+
+            <div class="col-md-2">
+                <label class="form-label small">To</label>
+                <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+            </div>
+
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100">Apply</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- ================= ITEM BREAKDOWN ================= -->
+    {% if report_type == "sales" %}
+    <div class="card app-card mx-3 p-3 mb-5">
+
+        <h4 class="fw-bold mb-2">Item-level Sales & Profit</h4>
+        <div class="small-text text-muted mb-3">
+            One row per item · Revenue ex GST · Cost = actual landed cost
+        </div>
+
+        <div class="table-responsive compact-table-wrapper">
+            <table class="table table-sm compact-table">
+                <thead class="compact-thead">
+                    <tr>
+                        <th class="text-start">Item</th>
+                        <th class="text-end">Qty</th>
+                        <th class="text-end">Revenue</th>
+                        <th class="text-end">Cost</th>
+                        <th class="text-end">GP</th>
+                        <th class="text-end">GP %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rows %}
+                    {% set margin = (r.gross_profit / r.revenue_ex * 100) if r.revenue_ex > 0 else 0 %}
+                    <tr>
+                        <td class="fw-medium text-start">{{ r.item }}</td>
+                        <td class="text-end mono">{{ r.quantity }}</td>
+                        <td class="text-end mono text-success">
+                            ${{ "%.2f"|format(r.revenue_ex) }}
+                        </td>
+                        <td class="text-end mono text-danger">
+                            ${{ "%.2f"|format(r.cost) }}
+                        </td>
+                        <td class="text-end mono fw-semibold">
+                            ${{ "%.2f"|format(r.gross_profit) }}
+                        </td>
+                        <td class="text-end mono
+                            {% if margin >= 60 %}text-success
+                            {% elif margin < 40 %}text-danger
+                            {% else %}text-muted{% endif %}
+                        ">
+                            {{ "%.1f"|format(margin) }}%
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+    {% endif %}
+
+    <!-- ================= GROSS PROFIT TAB ================= -->
+    {% if report_type == "gross_profit" %}
+    <div class="card app-card mx-3 p-4 mb-5">
+
+        <h4 class="fw-bold mb-3">Gross Profit Summary</h4>
+
+        <!-- SUMMARY CARDS -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="alert alert-success">
+                    <strong>Total Revenue (ex GST)</strong><br>
+                    ${{ "%.2f"|format(total_revenue_ex) }}<br>
+                    <small class="text-muted">
+                        Inc GST: ${{ "%.2f"|format(total_revenue_inc) }}
+                    </small>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="alert alert-danger">
+                    <strong>Total Cost</strong><br>
+                    ${{ "%.2f"|format(total_cost) }}<br>
+                    <small class="text-muted">
+                        Actual landed cost (GST-agnostic)
+                    </small>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="alert alert-secondary">
+                    <strong>Gross Profit</strong><br>
+                    ${{ "%.2f"|format(total_gp) }}<br>
+                    <small class="text-muted">
+                        Margin: {{ "%.2f"|format(gp_margin) }}%
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <!-- CATEGORY GP -->
+        <hr class="my-4">
+        <h5 class="fw-bold mb-3">Gross Profit by Category</h5>
+
+        <div class="table-responsive">
+            <table class="table table-sm compact-table">
+                <thead class="compact-thead">
+                    <tr>
+                        <th class="text-start">Category</th>
+                        <th class="text-end">Revenue</th>
+                        <th class="text-end">Cost</th>
+                        <th class="text-end">GP</th>
+                        <th class="text-end">GP %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in category_rows %}
+                    {% set margin = (c.gross_profit / c.revenue_ex * 100) if c.revenue_ex > 0 else 0 %}
+                    <tr>
+                        <td class="fw-medium text-start">{{ c.category }}</td>
+                        <td class="text-end mono text-success">
+                            ${{ "%.2f"|format(c.revenue_ex) }}
+                        </td>
+                        <td class="text-end mono text-danger">
+                            ${{ "%.2f"|format(c.cost) }}
+                        </td>
+                        <td class="text-end mono fw-semibold">
+                            ${{ "%.2f"|format(c.gross_profit) }}
+                        </td>
+                        <td class="text-end mono">
+                            {{ "%.1f"|format(margin) }}%
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+    {% endif %}
+
+</div>
+
+<!-- ================= COMPACT TABLE STYLES ================= -->
+<style>
+.compact-table-wrapper {
+    max-height: 70vh;
+    overflow: auto;
+}
+
+.compact-table {
+    font-size: 0.85rem;
+    line-height: 1.25;
+}
+
+.compact-table th,
+.compact-table td {
+    padding: 6px 8px;
+    vertical-align: middle;
+}
+
+.compact-thead th {
+    position: sticky;
+    top: 0;
+    background: #F9FAFB;
+    border-bottom: 2px solid #E5E7EB;
+    z-index: 2;
+    font-weight: 600;
+    color: #374151;
+}
+
+.compact-table tbody tr:nth-child(even) {
+    background-color: #FAFAFA;
+}
+
+.compact-table tbody tr:hover {
+    background-color: #EEF2FF;
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.fw-medium {
+    font-weight: 500;
+}
+</style>
+
+{% endblock %}

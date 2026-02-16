@@ -1,0 +1,200 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">Sales Dashboard</h2>
+    </div>
+
+    <!-- FILTER CARD -->
+    <div class="card app-card mx-3 mb-4 p-4">
+        <h5 class="fw-bold mb-3">Filter Sales</h5>
+
+        <form method="get" class="row g-3">
+
+            <div class="col-md-3 col-12">
+                <label class="form-label small-text fw-semibold">Start Date</label>
+                <input type="date" id="start_date" name="start_date"
+                       value="{{ request.args.get('start_date','') }}" class="form-control">
+            </div>
+
+            <div class="col-md-3 col-12">
+                <label class="form-label small-text fw-semibold">End Date</label>
+                <input type="date" id="end_date" name="end_date"
+                       value="{{ request.args.get('end_date','') }}" class="form-control">
+            </div>
+
+            <div class="col-md-3 col-12">
+                <label class="form-label small-text fw-semibold">Filter by Store</label>
+                <select id="store_filter" name="store_filter" class="form-select">
+                    <option value="">All Stores</option>
+                    {% for store in stores %}
+                    <option value="{{ store }}" {% if store_filter == store %}selected{% endif %}>
+                        {{ store }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="col-md-3 col-12">
+                <button type="submit" class="btn app-btn-primary w-100">Apply Filter</button>
+            </div>
+
+        </form>
+    </div>
+
+    <!-- SUMMARY CARDS -->
+    <div class="row mx-3 mb-4">
+
+        <div class="col-md-3 col-6 mb-3">
+            <div class="summary-card p-3 app-card">
+                <h6 class="small-text fw-semibold">Total Revenue</h6>
+                <div class="fs-3 fw-bold text-success">${{ total_revenue }}</div>
+                <div class="mt-2 small-text">
+                    {% for s, revenue in store_revenue.items() %}
+                        <div><b>{{ s }}:</b> ${{ '%.2f'|format(revenue) }}</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-6 mb-3">
+            <div class="summary-card p-3 app-card">
+                <h6 class="small-text fw-semibold">Orders</h6>
+                <div class="fs-3 fw-bold">{{ total_orders }}</div>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-6 mb-3">
+            <div class="summary-card p-3 app-card">
+                <h6 class="small-text fw-semibold">Items Sold</h6>
+                <div class="fs-3 fw-bold">{{ total_items_sold }}</div>
+            </div>
+        </div>
+
+        <div class="col-md-3 col-6 mb-3">
+            <div class="summary-card p-3 app-card">
+                <h6 class="small-text fw-semibold">Avg Order Value</h6>
+                <div class="fs-3 fw-bold">${{ average_order_value }}</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- CATEGORY SALES -->
+    <div class="mx-3 mb-5">
+        <h4 class="fw-bold mb-3">Top-Selling Items by Category</h4>
+
+        {% if category_sales %}
+            {% for category, items in category_sales.items() %}
+
+            <div class="card app-card mb-4 p-3 sales-category-card" onclick="toggleCategory(this)">
+                <div class="d-flex justify-content-between">
+                    <h5 class="fw-bold">{{ category }}</h5>
+                    <span class="toggle-arrow">▼</span>
+                </div>
+
+                <div class="category-details mt-3" style="display:none;">
+                    <table class="table app-table table-hover">
+                        <thead class="app-thead">
+                            <tr>
+                                <th>Item</th>
+                                <th>Quantity Sold</th>
+                                <th>Total Revenue</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item, data in items.items() %}
+                            <tr>
+                                <td>{{ item }}</td>
+                                <td>{{ data.quantity }}</td>
+                                <td>${{ '%.2f'|format(data.revenue) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+            </div>
+
+            {% endfor %}
+        {% else %}
+            <div class="alert alert-info">No sales found for this date range.</div>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- JS -->
+<script>
+function toggleCategory(card) {
+    let details = card.querySelector(".category-details");
+    let arrow = card.querySelector(".toggle-arrow");
+
+    if (details.style.display === "none") {
+        details.style.display = "block";
+        arrow.innerText = "▲";
+    } else {
+        details.style.display = "none";
+        arrow.innerText = "▼";
+    }
+}
+</script>
+
+<!-- CSS -->
+<style>
+.summary-card {
+    border-radius: 16px;
+}
+
+.sales-category-card {
+    cursor: pointer;
+    transition: .25s ease;
+}
+.sales-category-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.07);
+}
+
+.toggle-arrow {
+    font-size: 1.2rem;
+    opacity: 0.5;
+}
+
+.category-details {
+    animation: fadeIn .3s ease;
+}
+@keyframes fadeIn {
+    from { opacity:0; transform: translateY(-4px); }
+    to { opacity:1; transform: translateY(0); }
+}
+
+/* Use shared app styles */
+.app-card {
+    border-radius: 18px;
+    border: 1px solid rgba(0,0,0,0.05);
+    background: #ffffff;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+}
+
+.app-thead {
+    background: #111827 !important;
+    color: white !important;
+}
+
+.app-btn-primary {
+    background: linear-gradient(135deg,#6366F1,#4F46E5) !important;
+    border-radius: 12px !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+}
+
+.small-text {
+    font-size: 0.85rem;
+    color: #6B7280;
+}
+</style>
+
+{% endblock %}

@@ -1,0 +1,310 @@
+{% extends "navbar.html" %}
+
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- Page Title -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">Stock Out</h2>
+    </div>
+
+    <!-- SUPPLIER FILTER -->
+    <div class="card app-card mb-4 mx-3 p-3">
+        <form method="get" action="{{ url_for('stock_out') }}" class="row g-3 align-items-end">
+            <div class="col-md-6 col-12">
+                <label class="form-label small-text fw-semibold">Filter by Supplier</label>
+                <select id="supplier" name="supplier" class="form-select">
+                    <option value="">All Suppliers</option>
+                    {% for supplier in suppliers %}
+                    <option value="{{ supplier.name }}" {% if supplier_filter == supplier.name %}selected{% endif %}>
+                        {{ supplier.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+
+    <!-- STOCK OUT FORM -->
+    <div class="card app-card mx-3 mb-4 p-4">
+        <h5 class="fw-bold mb-3">Create Stock Out Entry</h5>
+
+        <form id="stockOutForm">
+
+            <div class="row g-3">
+
+                <!-- Store -->
+                <div class="col-md-6 col-12">
+                    <label class="form-label small-text fw-semibold">Store</label>
+                    <select id="store" name="store" class="form-select" required>
+                        <option value="" disabled selected>Select Store</option>
+                        <option value="Doncaster">Doncaster</option>
+                        <option value="Lonsdale">Lonsdale</option>
+                        <option value="Clayton">Clayton</option>
+                        <option value="Glen Waverley">Glen Waverley</option>
+                        <option value="Central Kitchen">Central Kitchen</option>
+                    </select>
+                </div>
+
+                <!-- Date -->
+                <div class="col-md-6 col-12">
+                    <label class="form-label small-text fw-semibold">Date</label>
+                    <input type="date" id="stock_date" name="stock_date" class="form-control" required>
+                </div>
+
+                <!-- Ingredient -->
+                <div class="col-md-6 col-12">
+                    <label class="form-label small-text fw-semibold">Ingredient</label>
+                    <select id="ingredient_id" name="ingredient_id"
+                            class="form-select select2"
+                            onchange="updateStockAvailability(); checkStock();"
+                            required>
+                        <option value="" disabled selected>Select Ingredient</option>
+                        {% for ingredient in ingredients|sort(attribute='name') %}
+                        <option value="{{ ingredient.id }}" data-stock="{{ ingredient.quantity }}">
+                            {{ ingredient.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Quantity to Remove -->
+                <div class="col-md-6 col-12">
+                    <label class="form-label small-text fw-semibold">Quantity to Remove</label>
+                    <input type="number" min="0.1" step="0.1" id="stock_removed" name="stock_removed"
+                           class="form-control" placeholder="Enter quantity"
+                           required oninput="checkStock()">
+                    <p id="stockWarning" class="text-danger mt-1 d-none"></p>
+                </div>
+
+            </div>
+
+            <p id="stockAvailability" class="text-muted mt-2">Available Stock: —</p>
+
+            <button type="button" id="addToListBtn" class="btn app-btn-warning w-100 mt-3 app-btn fw-semibold"
+                    onclick="addToStockOutTable()">
+                + Add to List
+            </button>
+        </form>
+    </div>
+
+    <!-- TEMP STOCK OUT LIST -->
+    <div class="card app-card mx-3 mb-4 p-4">
+        <h5 class="fw-bold mb-3">Items to Be Stocked Out</h5>
+
+        <div class="table-responsive app-table-container">
+            <table class="table table-hover app-table mb-0" id="tempStockOutTable">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Store</th>
+                        <th>Date</th>
+                        <th>Ingredient</th>
+                        <th>Quantity</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="tempStockOutBody"></tbody>
+            </table>
+        </div>
+
+        <button type="button" id="submitButton" class="btn app-btn-danger w-100 mt-3 app-btn fw-semibold"
+                onclick="submitStockOut()">
+            Submit Stock Out
+        </button>
+    </div>
+
+    <!-- CURRENT STOCK TABLE -->
+    <div class="card app-card mx-3 mb-5 p-4">
+        <h5 class="fw-bold mb-3">Current Stock</h5>
+
+        <div class="table-responsive app-table-container">
+            <table class="table table-hover app-table mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Quantity</th>
+                        <th>Unit</th>
+                        <th>Supplier</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    {% for ingredient in ingredients %}
+                    <tr id="ingredient-{{ ingredient.id }}" class="app-row">
+                        <td>{{ ingredient.id }}</td>
+                        <td class="fw-semibold">{{ ingredient.name }}</td>
+                        <td class="stock-quantity">{{ "%.1f"|format(ingredient.quantity) }}</td>
+                        <td>{{ ingredient.unit }}</td>
+                        <td>{{ ingredient.supplier }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<!-- JS -->
+<script>
+let stockOutItems = [];
+
+function updateStockAvailability() {
+    const selected = document.getElementById("ingredient_id");
+    const stock = selected.options[selected.selectedIndex]?.dataset.stock;
+    document.getElementById("stockAvailability").innerText =
+        stock ? `Available Stock: ${parseFloat(stock).toFixed(1)}` : "Available Stock: —";
+}
+
+function checkStock() {
+    const selected = document.getElementById("ingredient_id");
+    const availableStock = parseFloat(selected.options[selected.selectedIndex]?.dataset.stock) || 0;
+    const requested = parseFloat(document.getElementById("stock_removed").value) || 0;
+    const warning = document.getElementById("stockWarning");
+    const button = document.getElementById("addToListBtn");
+
+    if (requested > availableStock) {
+        warning.innerText = "❌ Not enough stock!";
+        warning.classList.remove("d-none");
+        button.disabled = true;
+    } else {
+        warning.classList.add("d-none");
+        button.disabled = false;
+    }
+}
+
+function addToStockOutTable() {
+    const store = document.getElementById("store").value;
+    const stockDate = document.getElementById("stock_date").value;
+    const ingredientId = document.getElementById("ingredient_id").value;
+    const ingredientName = document.getElementById("ingredient_id").selectedOptions[0].text;
+    const stockRemoved = document.getElementById("stock_removed").value;
+
+    if (!store || !stockDate || !ingredientId || !stockRemoved) {
+        alert("Please fill all fields.");
+        return;
+    }
+
+    stockOutItems.push({ store, stockDate, ingredientId, ingredientName, stockRemoved });
+
+    const row = document.createElement("tr");
+    row.setAttribute("data-ingredient-id", ingredientId);
+    row.setAttribute("data-stock-removed", stockRemoved);
+    row.innerHTML = `
+        <td>${store}</td>
+        <td>${stockDate}</td>
+        <td>${ingredientName}</td>
+        <td>${stockRemoved}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="removeFromStockOutTable(this)">Remove</button></td>
+    `;
+    document.getElementById("tempStockOutBody").appendChild(row);
+
+    document.getElementById("stock_removed").value = "";
+    checkStock();
+}
+
+function removeFromStockOutTable(button) {
+    const row = button.closest("tr");
+    const ingredientId = row.dataset.ingredientId;
+    const stockRemoved = row.dataset.stockRemoved;
+
+    stockOutItems = stockOutItems.filter(item =>
+        !(item.ingredientId == ingredientId && item.stockRemoved == stockRemoved)
+    );
+
+    row.remove();
+}
+
+function submitStockOut() {
+    if (stockOutItems.length === 0) {
+        alert("❌ No items added.");
+        return;
+    }
+
+    fetch("{{ url_for('stock_out') }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ stockOutItems })
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            alert(`✅ Submitted! Invoice No: ${data.invoice_no}`);
+            location.reload();
+        } else {
+            alert("❌ Submission failed.");
+        }
+    });
+}
+
+// Select2
+$(document).ready(function () {
+    $("#ingredient_id").select2({
+        placeholder: "Search Ingredient",
+        allowClear: true,
+        width: "100%",
+        minimumResultsForSearch: 0,   // 👈 FORCE search bar to appear
+        dropdownAutoWidth: true
+    });
+});
+
+</script>
+
+<!-- CSS -->
+<style>
+body {
+    background: #F5F7FA;
+    font-family: Inter, -apple-system, BlinkMacSystemFont;
+}
+
+/* CARDS */
+.app-card {
+    border-radius: 18px;
+    background: #fff;
+    border: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 4px 14px rgba(0,0,0,0.06);
+}
+
+/* BUTTONS */
+.app-btn {
+    border-radius: 12px !important;
+    padding: 10px 18px !important;
+    font-weight: 600 !important;
+}
+
+.app-btn-warning {
+    background: #FBBF24 !important;
+    color: white !important;
+}
+
+.app-btn-danger {
+    background: #EF4444 !important;
+    color: white !important;
+}
+
+/* TABLES */
+.app-table-container {
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.app-table tbody tr {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+}
+
+.app-thead {
+    background: #111827;
+    color: white;
+}
+
+.small-text {
+    font-size: 0.85rem;
+    color: #6B7280;
+}
+</style>
+
+{% endblock %}

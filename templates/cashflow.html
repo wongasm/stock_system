@@ -1,0 +1,139 @@
+{% extends "navbar.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="text-center mb-4">Cashflow Calculator</h2>
+
+    <form class="mx-auto" style="max-width: 600px;">
+        <!-- ✅ Unpaid Invoices -->
+        <div class="mb-3">
+            <label class="form-label">Unpaid Invoices Total:</label>
+            <input type="text" class="form-control" value="${{ total_unpaid }}" readonly>
+        </div>
+
+        <!-- ✅ Cash on Hand -->
+        <div class="mb-3">
+            <label for="cash_on_hand" class="form-label">Cash on Hand:</label>
+            <input type="number" class="form-control" id="cash_on_hand" placeholder="Enter current cash available">
+        </div>
+
+        <hr>
+
+        <!-- ✅ Add Purchase Items -->
+        <h5 class="mt-4">Add Purchase Items</h5>
+        <div class="row g-2 mb-3">
+            <div class="col-12 col-md-7">
+                <label class="form-label">Select Ingredient:</label>
+                <select id="ingredient_select" class="form-select select2">
+                    <option value="" disabled selected>Select Ingredient</option>
+                    {% for ingredient in ingredients %}
+                    <option value="{{ ingredient.id }}" data-price="{{ ingredient.price_per_unit }}">{{ ingredient.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-6 col-md-3">
+                <label class="form-label">Qty:</label>
+                <input type="number" class="form-control" id="purchase_qty" placeholder="Qty">
+            </div>
+            <div class="col-6 col-md-2 d-grid align-items-end">
+                <button class="btn btn-primary mt-md-4" id="add_item">Add</button>
+            </div>
+        </div>
+
+        <!-- ✅ Purchase List -->
+        <table class="table table-bordered mt-4">
+            <thead class="table-light">
+                <tr>
+                    <th>Ingredient</th>
+                    <th>Qty</th>
+                    <th>Unit Price</th>
+                    <th>Subtotal</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="purchase_list"></tbody>
+        </table>
+
+        <!-- ✅ Cashflow Result -->
+        <div class="mb-3">
+            <label class="form-label fw-bold">Remaining Cashflow:</label>
+            <input type="text" class="form-control" id="cashflow_result" readonly>
+        </div>
+
+        <button type="button" class="btn btn-danger w-100" id="reset_all">Reset</button>
+    </form>
+</div>
+
+<!-- ✅ Select2 + Logic -->
+<style>
+.select2-container {
+    width: 100% !important;
+}
+</style>
+
+<script>
+let purchaseList = [];
+
+function updateCashflow() {
+    let totalUnpaid = {{ total_unpaid }};
+    let cashOnHand = parseFloat(document.getElementById("cash_on_hand").value) || 0;
+    let totalPurchases = purchaseList.reduce((sum, item) => sum + item.qty * item.price, 0);
+    let result = (totalUnpaid + cashOnHand - totalPurchases).toFixed(2);
+    document.getElementById("cashflow_result").value = `$${result}`;
+}
+
+function renderPurchaseList() {
+    const tbody = document.getElementById("purchase_list");
+    tbody.innerHTML = "";
+    purchaseList.forEach((item, index) => {
+        let row = `
+            <tr>
+                <td>${item.name}</td>
+                <td>${item.qty}</td>
+                <td>$${item.price.toFixed(2)}</td>
+                <td>$${(item.qty * item.price).toFixed(2)}</td>
+                <td><button type="button" class="btn btn-sm btn-danger" onclick="removeItem(${index})">✖</button></td>
+            </tr>`;
+        tbody.innerHTML += row;
+    });
+    updateCashflow();
+}
+
+function removeItem(index) {
+    purchaseList.splice(index, 1);
+    renderPurchaseList();
+}
+
+document.getElementById("add_item").addEventListener("click", function (e) {
+    e.preventDefault();
+    const select = document.getElementById("ingredient_select");
+    const qty = parseFloat(document.getElementById("purchase_qty").value);
+    const selectedOption = select.options[select.selectedIndex];
+    if (!qty || qty <= 0 || !selectedOption.value) return;
+
+    const item = {
+        id: selectedOption.value,
+        name: selectedOption.text,
+        qty: qty,
+        price: parseFloat(selectedOption.dataset.price)
+    };
+
+    purchaseList.push(item);
+    renderPurchaseList();
+    document.getElementById("purchase_qty").value = "";
+    $('#ingredient_select').val(null).trigger('change');
+});
+
+document.getElementById("cash_on_hand").addEventListener("input", updateCashflow);
+document.getElementById("reset_all").addEventListener("click", function () {
+    document.getElementById("cash_on_hand").value = "";
+    document.getElementById("cashflow_result").value = "";
+    purchaseList = [];
+    renderPurchaseList();
+});
+
+$(document).ready(function () {
+    $('#ingredient_select').select2({ placeholder: "Select Ingredient", allowClear: true });
+});
+</script>
+{% endblock %}

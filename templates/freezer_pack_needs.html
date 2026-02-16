@@ -1,0 +1,151 @@
+{% extends "navbar.html" %}
+
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">Freezer Pack Needs</h2>
+    </div>
+
+    <!-- FILTER CARD -->
+    <div class="card app-card mx-3 mb-4 p-4">
+        <h5 class="fw-bold mb-3">Filter Date Range</h5>
+
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label small-text fw-semibold">Start Date</label>
+                <input type="date" id="start_date" name="start_date" class="form-control"
+                       value="{{ start_date }}">
+            </div>
+
+            <div class="col-md-4">
+                <label class="form-label small-text fw-semibold">End Date</label>
+                <input type="date" id="end_date" name="end_date" class="form-control"
+                       value="{{ end_date }}">
+            </div>
+
+            <div class="col-md-4 d-flex align-items-end">
+                <button type="submit" class="btn app-btn-primary w-100">Apply Filter</button>
+            </div>
+        </form>
+    </div>
+
+
+    <!-- FLAVOR SUMMARY -->
+    <div class="card app-card mx-3 mb-4 p-4">
+        <h4 class="fw-bold mb-3">Bingsu Flavors Sold</h4>
+
+        {% if bingsu_flavor_sales %}
+        <div class="table-responsive">
+            <table class="table app-table table-striped table-bordered mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Flavor</th>
+                        <th>Quantity Sold</th>
+                        <th>Freezer Packs Needed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for flavor, qty in bingsu_flavor_sales.items() %}
+                    <tr>
+                        <td>{{ flavor }}</td>
+                        <td>{{ qty }}</td>
+                        <td>{{ per_flavor_packs[flavor] }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+            <p class="text-muted">No Bingsu sold in the selected date range.</p>
+        {% endif %}
+    </div>
+
+
+    <!-- CURRENT STOCK -->
+    <div class="mx-3 mb-4">
+        <div class="alert alert-info fw-bold fs-5 shadow-sm">
+            📦 Current Freezer Pack Stock on Hand:
+            <span class="text-primary">{{ current_stock }}</span>
+        </div>
+    </div>
+
+
+    <!-- INGREDIENT BREAKDOWN PER FLAVOR -->
+    <div class="mx-3">
+        <h4 class="fw-bold mb-3">Ingredients Needed per Bingsu Flavor</h4>
+
+        {% if ingredients_by_flavor %}
+            {% for flavor, ingredients in ingredients_by_flavor.items() %}
+
+                <div class="card app-card mb-4">
+
+                    <div class="card-header bg-dark text-white fw-bold" style="border-radius: 14px 14px 0 0;">
+                        {{ flavor }}
+                    </div>
+
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-bordered mb-0">
+                                <thead class="app-thead">
+                                    <tr>
+                                        <th>Ingredient</th>
+                                        <th>Grams Needed</th>
+                                        <th>Units to Purchase</th>
+                                        <th>Supplier</th>
+                                        <th>Category</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for name, data in ingredients.items() %}
+                                    <tr>
+                                        <td>{{ name }}</td>
+                                        <td>{{ data.grams_needed }}</td>
+                                        <td>{{ data.units_to_purchase }}</td>
+                                        <td>{{ data.supplier }}</td>
+                                        <td>{{ data.category }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                </div>
+
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">No ingredient calculations available. Please check recipe configuration.</p>
+        {% endif %}
+    </div>
+
+</div>
+
+<!-- STYLING -->
+<style>
+    body {
+        background: #F5F7FA !important;
+    }
+    .app-card {
+        border-radius: 18px;
+        background: #ffffff;
+        border: 1px solid rgba(0,0,0,0.07);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+    }
+    .app-btn-primary {
+        background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
+        color: white !important;
+        border-radius: 10px !important;
+    }
+    .app-thead {
+        background: #111827 !important;
+        color: white !important;
+    }
+    .small-text {
+        font-size: 0.85rem;
+    }
+</style>
+
+{% endblock %}

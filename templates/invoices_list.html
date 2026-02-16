@@ -1,0 +1,475 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+
+    <!-- HEADER -->
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <h2 class="fw-bold app-title">Invoices — {{ store }}</h2>
+        <a href="{{ url_for('invoice_page') }}" class="btn app-btn-secondary">← Back</a>
+    </div>
+
+    <!-- TOTAL UNPAID AMOUNT -->
+    <div class="mx-3 d-flex justify-content-end mb-3">
+        <div class="p-3 rounded-3 shadow-sm bg-white border d-inline-block text-end">
+            <div class="fw-bold text-danger">
+                Unpaid Total: ${{ '%.2f'|format(total_unpaid_amount) }}
+            </div>
+        </div>
+    </div>
+
+    <!-- ============= UNPAID INVOICES ============= -->
+    <div class="card app-card mx-3 mb-4 p-4">
+        <h4 class="fw-bold mb-3">Unpaid Invoices</h4>
+
+        {% if unpaid_invoices %}
+        <!-- MOBILE CARD VIEW -->
+        <div class="d-md-none">
+            {% for invoice in unpaid_invoices %}
+            {% set items = items_by_invoice.get(invoice[0], []) %}
+            {% set total_selling = items | sum(attribute='total_selling_inc_gst') %}
+
+            <div class="invoice-card mb-3" onclick="toggleCard(this)">
+                <div class="p-3 d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-bold">Invoice #{{ invoice[0] }}</div>
+                        <div class="small-text">{{ invoice[1] }}</div>
+                    </div>
+
+                    <div class="text-end">
+                        <span class="badge bg-danger px-3 py-2">Unpaid</span>
+                        <div class="fw-bold text-success mt-2">
+                            ${{ '%.2f'|format(total_selling) }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EXPANDABLE DETAILS -->
+                <div class="invoice-details p-3" style="display:none;">
+                    <h6 class="fw-bold mb-2">Invoice Breakdown</h6>
+
+                    {% for item in items %}
+                    <div class="d-flex justify-content-between mb-2">
+                        <div>
+                            <div class="fw-semibold">{{ item.item }}</div>
+                            <div class="small-text text-muted">
+                                Qty: {{ '%.1f'|format(item.quantity) }}
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <div class="small-text">Unit: ${{ '%.2f'|format(item.selling_price or 0) }}</div>
+                            <div class="fw-bold text-success">
+                                ${{ '%.2f'|format(item.total_selling_inc_gst) }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <hr>
+
+                    <div class="fw-bold text-success">
+                        Total: ${{ '%.2f'|format(total_selling) }}
+                    </div>
+
+                    <div class="d-flex flex-column gap-2 mt-3">
+                        <a href="{{ url_for('export_invoice', invoice_no=invoice[0]) }}"
+                           class="btn app-btn-primary w-100 btn-sm">Export PDF</a>
+
+                        <button class="btn app-btn-warning w-100 btn-sm"
+                                onclick="handleMarkPaid(event, '{{ invoice[0] }}')">
+                            Mark as Paid
+                        </button>
+
+                        <button class="btn app-btn-danger w-100 btn-sm"
+                                onclick="handleDeleteInvoice(event, '{{ invoice[0] }}')">
+                            Delete Invoice
+                        </button>
+
+                        <button class="btn app-btn-secondary w-100 btn-sm"
+                                onclick="handleEmailInvoice(event, '{{ invoice[0] }}', '{{ store }}')">
+                            Send Invoice
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- DESKTOP CARD TABLE VIEW -->
+        <div class="d-none d-md-block">
+            {% for invoice in unpaid_invoices %}
+            {% set items = items_by_invoice.get(invoice[0], []) %}
+            {% set total_selling = items | sum(attribute='total_selling_inc_gst') %}
+
+            <div class="invoice-table-card mb-3 p-3"
+                 onclick="toggleCard(this)">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-bold">Invoice #{{ invoice[0] }}</div>
+                        <div class="small-text">{{ invoice[1] }}</div>
+                    </div>
+                    <div class="text-end">
+                        <span class="badge bg-danger px-3 py-2">Unpaid</span>
+                        <div class="fw-bold text-success mt-2">
+                            ${{ '%.2f'|format(total_selling) }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="invoice-details mt-3 p-3" style="display:none; background:#F9FAFB; border-radius:12px;">
+                    <h6 class="fw-bold mb-3">Invoice Breakdown</h6>
+
+                    <table class="table table-sm mb-2">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Qty</th>
+                                <th>Unit Price</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in items %}
+                            <tr>
+                                <td>{{ item.item }}</td>
+                                <td>{{ '%.1f'|format(item.quantity) }}</td>
+                                <td>${{ '%.2f'|format(item.selling_price or 0) }}</td>
+                                <td>${{ '%.2f'|format(item.total_selling_inc_gst) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+
+                    <div class="fw-bold text-success mt-2">
+                        Total: ${{ '%.2f'|format(total_selling) }}
+                    </div>
+
+                    <div class="d-flex gap-2 mt-3 flex-wrap">
+                        <a href="{{ url_for('export_invoice', invoice_no=invoice[0]) }}"
+                           class="btn app-btn-primary btn-sm">PDF</a>
+
+                        <button class="btn app-btn-warning btn-sm"
+                                onclick="handleMarkPaid(event, '{{ invoice[0] }}')">
+                            Mark Paid
+                        </button>
+
+                        <button class="btn app-btn-danger btn-sm"
+                                onclick="handleDeleteInvoice(event, '{{ invoice[0] }}')">
+                            Delete
+                        </button>
+
+                        <button class="btn app-btn-secondary btn-sm"
+                                onclick="handleEmailInvoice(event, '{{ invoice[0] }}', '{{ store }}')">
+                            Email
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+            <p class="small-text mb-0">No unpaid invoices for this store.</p>
+        {% endif %}
+    </div>
+
+    <!-- ============= PAID INVOICES ============= -->
+    <div class="card app-card mx-3 mb-5 p-4">
+        <h4 class="fw-bold mb-3">Paid Invoices</h4>
+
+        {% if paid_invoices %}
+        <!-- MOBILE -->
+        <div class="d-md-none">
+            {% for invoice in paid_invoices %}
+            {% set items = items_by_invoice.get(invoice[0], []) %}
+            {% set total_selling = items | sum(attribute='total_selling_inc_gst') %}
+
+            <div class="invoice-card mb-3" onclick="toggleCard(this)">
+                <div class="p-3 d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-bold">Invoice #{{ invoice[0] }}</div>
+                        <div class="small-text">{{ invoice[1] }}</div>
+                    </div>
+
+                    <div class="text-end">
+                        <span class="badge bg-success px-3 py-2">Paid</span>
+                        <div class="fw-bold text-success mt-2">
+                            ${{ '%.2f'|format(total_selling) }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="invoice-details p-3" style="display:none;">
+                    <h6 class="fw-bold mb-2">Invoice Breakdown</h6>
+
+                    {% for item in items %}
+                    <div class="d-flex justify-content-between mb-2">
+                        <div>
+                            <div class="fw-semibold">{{ item.item }}</div>
+                            <div class="small-text text-muted">
+                                Qty: {{ '%.1f'|format(item.quantity) }}
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <div class="small-text">Unit: ${{ '%.2f'|format(item.selling_price or 0) }}</div>
+                            <div class="fw-bold text-success">
+                                ${{ '%.2f'|format(item.total_selling_inc_gst) }}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <hr>
+                    <div class="fw-bold text-success">
+                        Total: ${{ '%.2f'|format(total_selling) }}
+                    </div>
+
+                    <div class="d-flex flex-column gap-2 mt-3">
+                        <a href="{{ url_for('export_invoice', invoice_no=invoice[0]) }}"
+                           class="btn app-btn-primary w-100 btn-sm">Export PDF</a>
+
+                        <button class="btn app-btn-danger w-100 btn-sm"
+                                onclick="handleDeleteInvoice(event, '{{ invoice[0] }}')">
+                            Delete Invoice
+                        </button>
+
+                        <button class="btn app-btn-secondary w-100 btn-sm"
+                                onclick="handleEmailInvoice(event, '{{ invoice[0] }}', '{{ store }}')">
+                            Send Invoice
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- DESKTOP -->
+        <div class="d-none d-md-block">
+            {% for invoice in paid_invoices %}
+            {% set items = items_by_invoice.get(invoice[0], []) %}
+            {% set total_selling = items | sum(attribute='total_selling_inc_gst') %}
+
+            <div class="invoice-table-card mb-3 p-3"
+                 onclick="toggleCard(this)">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <div class="fw-bold">Invoice #{{ invoice[0] }}</div>
+                        <div class="small-text">{{ invoice[1] }}</div>
+                    </div>
+                    <div class="text-end">
+                        <span class="badge bg-success px-3 py-2">Paid</span>
+                        <div class="fw-bold text-success mt-2">
+                            ${{ '%.2f'|format(total_selling) }}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="invoice-details mt-3 p-3" style="display:none; background:#F9FAFB; border-radius:12px;">
+                    <h6 class="fw-bold mb-3">Invoice Breakdown</h6>
+
+                    <table class="table table-sm mb-2">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th>Qty</th>
+                                <th>Unit Price</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in items %}
+                            <tr>
+                                <td>{{ item.item }}</td>
+                                <td>{{ '%.1f'|format(item.quantity) }}</td>
+                                <td>${{ '%.2f'|format(item.selling_price or 0) }}</td>
+                                <td>${{ '%.2f'|format(item.total_selling_inc_gst) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+
+                    <div class="fw-bold text-success mt-2">
+                        Total: ${{ '%.2f'|format(total_selling) }}
+                    </div>
+
+                    <div class="d-flex gap-2 mt-3 flex-wrap">
+                        <a href="{{ url_for('export_invoice', invoice_no=invoice[0]) }}"
+                           class="btn app-btn-primary btn-sm">PDF</a>
+
+                        <button class="btn app-btn-danger btn-sm"
+                                onclick="handleDeleteInvoice(event, '{{ invoice[0] }}')">
+                            Delete
+                        </button>
+
+                        <button class="btn app-btn-secondary btn-sm"
+                                onclick="handleEmailInvoice(event, '{{ invoice[0] }}', '{{ store }}')">
+                            Email
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+            <p class="small-text mb-0">No paid invoices for this store.</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- SEND INVOICE MODAL (same as before) -->
+<div class="modal fade" id="sendInvoiceModal" tabindex="-1" aria-labelledby="sendInvoiceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Send Invoice</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="sendInvoiceForm">
+                    <input type="hidden" id="modalInvoiceNo">
+                    <div class="mb-3">
+                        <label for="emailAddress" class="form-label">Recipient Email:</label>
+                        <input type="email" class="form-control" id="emailAddress" readonly required>
+                    </div>
+                    <button type="submit" class="btn app-btn-primary w-100">Send Invoice</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- JS -->
+<script>
+function toggleCard(card) {
+    const details = card.querySelector(".invoice-details");
+    if (!details) return;
+    details.style.display = (details.style.display === "none" || details.style.display === "") ? "block" : "none";
+}
+
+function handleMarkPaid(e, invoiceNo) {
+    e.stopPropagation();
+    markPaid(invoiceNo);
+}
+function handleDeleteInvoice(e, invoiceNo) {
+    e.stopPropagation();
+    deleteInvoice(invoiceNo);
+}
+function handleEmailInvoice(e, invoiceNo, storeName) {
+    e.stopPropagation();
+    openEmailModal(invoiceNo, storeName);
+}
+
+const storeEmails = {
+    "Glen Waverley": "bills.otgt4t.rwtpiwemiagfw20t@xerofiles.com",
+    "Lonsdale": "bills.ogq93p.q13ke638rncqwtd0@xerofiles.com",
+    "Doncaster": "bills.os6yj1.soewzjogaynjfpqb@xerofiles.com",
+    "Clayton": "bills.olc5y0.uyvcqxramjr8hcse@xerofiles.com"
+};
+
+function markPaid(invoiceNo) {
+    fetch(`/mark_paid/${encodeURIComponent(invoiceNo)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin"
+    })
+    .then(r => r.json())
+    .then(data => {
+        alert(data.success ? "✅ " + data.message : "❌ " + data.message);
+        if (data.success) location.reload();
+    });
+}
+
+function deleteInvoice(invoiceNo) {
+    if (!confirm("Are you sure you want to delete this invoice?")) return;
+
+    fetch(`/delete_invoice/${encodeURIComponent(invoiceNo)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin"
+    })
+    .then(r => r.json())
+    .then(data => {
+        alert(data.success ? "✅ " + data.message : "❌ " + data.message);
+        if (data.success) location.reload();
+    });
+}
+
+function openEmailModal(invoiceNo, storeName) {
+    document.getElementById("modalInvoiceNo").value = invoiceNo;
+    document.getElementById("emailAddress").value = storeEmails[storeName] || "";
+    const modal = new bootstrap.Modal(document.getElementById("sendInvoiceModal"));
+    modal.show();
+}
+
+document.getElementById("sendInvoiceForm").addEventListener("submit", function (e) {
+    e.preventDefault();
+    const invoiceNo = document.getElementById("modalInvoiceNo").value;
+    const email = document.getElementById("emailAddress").value;
+
+    fetch(`/send_invoice/${encodeURIComponent(invoiceNo)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+    })
+    .then(r => r.json())
+    .then(data => alert(data.message));
+});
+</script>
+
+<style>
+.invoice-card,
+.invoice-table-card {
+    cursor: pointer;
+    border-radius: 16px;
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.06);
+    transition: 0.25s ease;
+}
+.invoice-card:hover,
+.invoice-table-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+}
+.invoice-details {
+    animation: fadeIn .2s ease;
+}
+@keyframes fadeIn {
+    from { opacity:0; transform:translateY(-3px); }
+    to   { opacity:1; transform:translateY(0); }
+}
+.app-card {
+    border-radius: 18px;
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+}
+.app-btn-primary {
+    background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
+    color: white !important;
+    border-radius: 12px !important;
+}
+.app-btn-secondary {
+    background: #EEF1F5 !important;
+    color: #374151 !important;
+    border-radius: 12px !important;
+}
+.app-btn-warning {
+    background: #FBBF24 !important;
+    color: #111827 !important;
+    border-radius: 12px !important;
+}
+.app-btn-danger {
+    background: #EF4444 !important;
+    color: #ffffff !important;
+    border-radius: 12px !important;
+}
+.small-text {
+    font-size: 0.85rem;
+    color: #6B7280;
+}
+body {
+    background: #F5F7FA;
+    font-family: Inter, -apple-system, BlinkMacSystemFont;
+}
+</style>
+
+{% endblock %}

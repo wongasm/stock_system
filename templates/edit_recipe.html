@@ -1,0 +1,35 @@
+{% extends "navbar.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Edit Recipe</h2>
+    
+    <form method="POST">
+        <div class="mb-3">
+            <label class="form-label">Output Item:</label>
+            <select name="output_item" class="form-control">
+                {% for ing in ingredients %}
+                <option value="{{ ing.id }}" {% if recipe.output_item_id == ing.id %}selected{% endif %}>{{ ing.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <h4>Ingredients</h4>
+        <div id="ingredients-list">
+            {% for ri in recipe_ingredients %}
+            <div class="input-group mb-2">
+                <select name="ingredient_id" class="form-control">
+                    {% for ing in ingredients %}
+                    <option value="{{ ing.id }}" {% if ri.ingredient_id == ing.id %}selected{% endif %}>{{ ing.name }}</option>
+                    {% endfor %}
+                </select>
+                <input type="number" name="grams_used" class="form-control" value="{{ ri.grams_used }}" required>
+            </div>
+            {% endfor %}
+        </div>
+
+        <button type="submit" class="btn btn-primary">Update Recipe</button>
+        <a href="{{ url_for('manage_recipes') }}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}

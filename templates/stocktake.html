@@ -1,0 +1,207 @@
+{% extends "user_navbar.html" %}
+
+{% block content %}
+
+<style>
+    body {
+        background: #F3F4F6;
+        font-family: Inter, -apple-system, BlinkMacSystemFont;
+    }
+
+    .app-card {
+        background: #ffffff;
+        padding: 28px;
+        border-radius: 18px;
+        border: 1px solid rgba(0,0,0,0.05);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+    }
+
+    .app-title {
+        font-weight: 700;
+        color: #111827;
+        font-size: 1.8rem;
+    }
+
+    .stocktake-table {
+        border-radius: 14px;
+        overflow: hidden;
+    }
+
+    .stocktake-table thead {
+        background: #111827;
+        color: white;
+    }
+
+    .stocktake-table tbody tr {
+        background: white;
+        transition: 0.2s ease;
+    }
+
+    .stocktake-table tbody tr:hover {
+        background: #F9FAFB;
+    }
+
+    .stock-input {
+        border-radius: 10px !important;
+        padding: 10px !important;
+    }
+
+    .btn-submit {
+        border-radius: 12px !important;
+        padding: 14px !important;
+        font-size: 1.05rem;
+        font-weight: 600 !important;
+        background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
+        border: none !important;
+        color: white !important;
+    }
+
+    .flash-message {
+        border-radius: 12px;
+        padding: 14px 18px;
+    }
+</style>
+
+<div class="container mt-4 mb-5">
+
+    <!-- Page Title -->
+    <h2 class="app-title mb-4">
+        {{ stocktake_type.capitalize() }} Stocktake
+    </h2>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="flash-message alert alert-{{ category }}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Stocktake Card -->
+    <div class="app-card">
+
+        <h5 class="fw-bold mb-3">Enter Stock Levels</h5>
+
+        <form id="stocktakeForm" method="POST" action="{{ url_for('stocktake', stocktake_type=stocktake_type) }}">
+
+            <div class="table-responsive stocktake-table mb-3">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th style="width: 60%">Ingredient</th>
+                            <th style="width: 40%">Stock On Hand</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for ingredient in ingredients %}
+                        <tr>
+                            <td class="fw-semibold">{{ ingredient.name }}</td>
+
+                            <td>
+                                {% if ingredient.measurement_type == 'binary' %}
+                                    <select
+                                        name="quantity_{{ ingredient.id }}"
+                                        class="form-select stock-input stocktake-input"
+                                        data-ingredient="{{ ingredient.id }}"
+                                    >
+                                        <option value="">Select</option>
+                                        <option value="Enough in store">Enough in store</option>
+                                        <option value="Not enough in store">Not enough in store</option>
+                                    </select>
+                                {% else %}
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        min="0"
+                                        name="quantity_{{ ingredient.id }}"
+                                        class="form-control stock-input numeric-input"
+                                        data-ingredient="{{ ingredient.id }}"
+                                        placeholder="Enter amount"
+                                    >
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <button type="submit" class="btn btn-submit w-100">
+                Submit {{ stocktake_type.capitalize() }} Stocktake
+            </button>
+        </form>
+    </div>
+</div>
+
+
+<!-- JavaScript -->
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+    const form = document.getElementById("stocktakeForm");
+    const submitButton = form.querySelector("button[type='submit']");
+    const storageKey = "autosave_{{ stocktake_type }}";
+
+    // ⏳ Warn user after 45 minutes
+    setTimeout(() => {
+        alert("You've had this page open for a while. Please refresh or log in again to avoid session issues.");
+    }, 45 * 60 * 1000);
+
+    // Restore autosaved values
+    const saved = JSON.parse(localStorage.getItem(storageKey) || "{}");
+    Object.entries(saved).forEach(([name, val]) => {
+        const field = form.querySelector(`[name="${name}"]`);
+        if (field) field.value = val;
+    });
+
+    // Autosave on input
+    form.querySelectorAll("input, select").forEach(el => {
+        el.addEventListener("input", () => {
+            const state = JSON.parse(localStorage.getItem(storageKey) || "{}");
+            state[el.name] = el.value;
+            localStorage.setItem(storageKey, JSON.stringify(state));
+        });
+    });
+
+    // Live feedback (optional)
+    document.querySelectorAll(".stocktake-input").forEach(select => {
+        select.addEventListener("change", function () {
+            const id = this.dataset.ingredient;
+            const cell = document.querySelector(`.need-to-buy[data-ingredient='${id}']`);
+            if (cell) cell.innerText = this.value === "Enough in store" ? "No" : "Yes (Buy 1)";
+        });
+    });
+
+    document.querySelectorAll(".numeric-input").forEach(input => {
+        input.addEventListener("input", function () {
+            const id = this.dataset.ingredient;
+            const cell = document.querySelector(`.need-to-buy[data-ingredient='${id}']`);
+            cell.innerText = parseFloat(this.value) > 0 ? "No" : "Yes (Buy 1)";
+        });
+    });
+
+    // Validate session before submitting
+    form.addEventListener("submit", function (e) {
+        e.preventDefault();
+
+        fetch("{{ url_for('check_session') }}", { method: "GET" })
+        .then(r => r.json())
+        .then(data => {
+            if (data.active) {
+                submitButton.disabled = true;
+                submitButton.innerText = "Submitting... ⏳";
+                localStorage.removeItem(storageKey);
+                form.submit();
+            } else {
+                alert("Your session has expired. Please log in again.");
+                window.location.href = "{{ url_for('login') }}";
+            }
+        })
+        .catch(() => alert("Network error. Please retry."));
+    });
+});
+</script>
+
+{% endblock %}

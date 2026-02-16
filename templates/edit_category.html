@@ -1,0 +1,17 @@
+{% extends "navbar.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="card shadow p-4">
+        <h2 class="text-center mb-4">Edit Category</h2>
+        <form action="{{ url_for('edit_category', id=category.id) }}" method="post">
+            <div class="mb-3">
+                <label class="form-label">Category Name:</label>
+                <input type="text" name="name" class="form-control" value="{{ category.name }}" required>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">Save Changes</button>
+            <a href="{{ url_for('manage_categories') }}" class="btn btn-secondary w-100 mt-2">Cancel</a>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Stock System</title>
+
+    <!-- ✅ Favicon -->
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- ✅ Select2 CSS (REQUIRED for ingredient search) -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            margin: 0;
+            background: #F3F4F6;
+            font-family: Inter, -apple-system, BlinkMacSystemFont;
+        }
+
+        /* ================= SIDEBAR ================= */
+        #sidebar {
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 260px;
+            background: #111827;
+            color: #E5E7EB;
+            padding-top: 20px;
+            overflow-y: auto;
+            transform: translateX(0);
+            transition: transform 0.3s ease;
+            z-index: 2000;
+        }
+
+        #sidebar.hidden {
+            transform: translateX(-260px);
+        }
+
+        #sidebar::-webkit-scrollbar { width: 6px; }
+        #sidebar::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 3px;
+        }
+
+        .nav-link-custom {
+            display: block;
+            padding: 12px 22px;
+            color: #D1D5DB;
+            font-size: 0.95rem;
+            text-decoration: none;
+            transition: 0.2s ease;
+        }
+
+        .nav-link-custom:hover {
+            background: #1F2937;
+            color: white;
+        }
+
+        .nav-section-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            opacity: 0.6;
+            text-transform: uppercase;
+            padding: 10px 22px;
+            margin-top: 15px;
+        }
+
+        /* ================= CONTENT ================= */
+        #content {
+            margin-left: 260px;
+            padding: 20px;
+            transition: margin-left 0.3s ease;
+        }
+
+        #content.expanded {
+            margin-left: 0;
+        }
+
+        /* ================= MOBILE ================= */
+        @media (max-width: 900px) {
+            #sidebar {
+                transform: translateX(-260px);
+            }
+            #sidebar.show {
+                transform: translateX(0);
+            }
+            #content {
+                margin-left: 0 !important;
+            }
+        }
+
+        /* ================= TOGGLE ================= */
+        #toggleSidebar {
+            position: fixed;
+            top: 15px;
+            left: 15px;
+            background: #111827;
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 8px;
+            z-index: 3001;
+            cursor: pointer;
+        }
+    </style>
+</head>
+
+<body>
+
+{% if current_user.role == "admin" %}
+
+<button id="toggleSidebar">Menu</button>
+
+<nav id="sidebar">
+    <div class="text-center mb-4">
+        <h5 class="text-white fw-bold">Stock System</h5>
+    </div>
+
+    <div class="nav-section-title">Main</div>
+    <a class="nav-link-custom" href="{{ url_for('index') }}">Ingredients</a>
+    <a class="nav-link-custom" href="{{ url_for('stock_in') }}">Stock In</a>
+    <a class="nav-link-custom" href="{{ url_for('stock_out') }}">Stock Out</a>
+    <a class="nav-link-custom" href="{{ url_for('stock_out_history') }}">Stock Out History</a>
+    <a class="nav-link-custom" href="{{ url_for('invoice_page') }}">Invoices</a>
+
+    <div class="nav-section-title">Production</div>
+    <a class="nav-link-custom" href="{{ url_for('manage_recipes') }}">Recipe Management</a>
+    <a class="nav-link-custom" href="{{ url_for('quantity_made') }}">Quantity Made</a>
+    <a class="nav-link-custom" href="{{ url_for('freezer_pack_needs') }}">Freezer Packs</a>
+
+    <div class="nav-section-title">Reports</div>
+    <a class="nav-link-custom" href="{{ url_for('reporting_page') }}">Reports</a>
+    <a class="nav-link-custom" href="{{ url_for('purchasing') }}">Purchasing</a>
+    <a class="nav-link-custom" href="{{ url_for('sales_report') }}">Sales Report</a>
+    <a class="nav-link-custom" href="{{ url_for('monthly_stocktake_report') }}">Monthly Report</a>
+
+    <div class="nav-section-title">Stocktake</div>
+    <a class="nav-link-custom" href="{{ url_for('admin_stocktake') }}">Daily Stocktake</a>
+    <a class="nav-link-custom" href="{{ url_for('admin_weekly_stocktake') }}">Weekly Stocktake</a>
+    <a class="nav-link-custom" href="{{ url_for('monthly_stocktake') }}">Monthly</a>
+
+
+    <div class="nav-section-title">Settings</div>
+    <a class="nav-link-custom" href="{{ url_for('manage_thresholds') }}">Thresholds</a>
+    <a class="nav-link-custom" href="{{ url_for('manage_stocktake_order') }}">Stocktake Order</a>
+    <a class="nav-link-custom" href="{{ url_for('manage_weekly_stocktake_order') }}">Weekly Order</a>
+    <a class="nav-link-custom" href="{{ url_for('manage_suppliers') }}">Suppliers</a>
+    <a class="nav-link-custom" href="{{ url_for('manage_categories') }}">Categories</a>
+    <a class="nav-link-custom" href="{{ url_for('logout') }}">Logout</a>
+</nav>
+
+{% endif %}
+
+<!-- ✅ jQuery MUST be BEFORE page content -->
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<!-- ✅ Select2 MUST be BEFORE page content -->
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<div id="content">
+    {% block content %}{% endblock %}
+</div>
+
+<!-- ✅ Bootstrap JS (modals, dropdowns, etc.) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    const sidebar = document.getElementById("sidebar");
+    const content = document.getElementById("content");
+    const toggleBtn = document.getElementById("toggleSidebar");
+
+    function applyLayout() {
+        if (window.innerWidth > 900) {
+            sidebar.classList.remove("hidden");
+            sidebar.classList.remove("show");
+            content.classList.remove("expanded");
+        } else {
+            sidebar.classList.add("hidden");
+            content.classList.add("expanded");
+        }
+    }
+
+    applyLayout();
+
+    toggleBtn.addEventListener("click", () => {
+        if (window.innerWidth > 900) {
+            sidebar.classList.toggle("hidden");
+            content.classList.toggle("expanded");
+        } else {
+            sidebar.classList.toggle("show");
+        }
+    });
+
+    window.addEventListener("resize", applyLayout);
+</script>
+
+</body>
+</html>

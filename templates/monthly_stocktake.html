@@ -1,0 +1,185 @@
+{% extends "navbar.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2 class="mb-3">Stocktake (By Date)</h2>
+
+    <!-- ⚠️ Warning -->
+    <div class="alert alert-warning">
+        <strong>⚠ Stocktake</strong><br>
+        Submitting will <strong>overwrite live stock quantities</strong>.<br>
+        Previous stock levels will be recorded for variance reporting.
+    </div>
+
+    <!-- Status Message -->
+    <div id="stocktakeMessage" class="alert d-none"></div>
+
+    <!-- Date Selector -->
+    <div class="mb-3">
+        <label for="stocktakeDate" class="form-label">Stocktake Date</label>
+        <input
+            type="date"
+            id="stocktakeDate"
+            class="form-control"
+            value="{{ selected_date }}"
+        >
+    </div>
+
+    <!-- Stocktake Table -->
+    <div class="table-responsive">
+        <table class="table table-bordered table-striped align-middle">
+            <thead class="table-dark">
+                <tr>
+                    <th>Ingredient</th>
+                    <th>System Stock (Before)</th>
+                    <th>Physical Count</th>
+                    <th>Variance</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ingredient in ingredients %}
+                {% set existing = stocktake_data.get(ingredient.id) if stocktake_data else None %}
+                <tr id="ingredient-{{ ingredient.id }}">
+                    <td>{{ ingredient.name }}</td>
+
+                    <!-- BEFORE SNAPSHOT -->
+                    <td class="current-stock" data-stock="{{ ingredient.quantity }}">
+                        {{ ingredient.quantity }}
+                    </td>
+
+                    <!-- COUNT INPUT -->
+                    <td>
+                        <input
+                            type="number"
+                            step="0.1"
+                            class="form-control stocktake-input"
+                            data-ingredient="{{ ingredient.id }}"
+                            data-current="{{ ingredient.quantity }}"
+                            {% if existing %}
+                                value="{{ existing.counted_quantity }}"
+                                disabled
+                            {% endif %}
+                        >
+                    </td>
+
+                    <!-- VARIANCE -->
+                    <td class="variance-cell fw-bold
+                        {% if existing %}
+                            {% if existing.variance_quantity > 0 %}text-success
+                            {% elif existing.variance_quantity < 0 %}text-danger
+                            {% else %}text-secondary{% endif %}
+                        {% else %}
+                            text-muted
+                        {% endif %}
+                    ">
+                        {% if existing %}
+                            {{ "+" if existing.variance_quantity > 0 else "" }}{{ existing.variance_quantity }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Submit -->
+    <button
+        class="btn btn-primary w-100 mt-3"
+        onclick="submitStocktake()"
+    >
+        Submit Stocktake
+    </button>
+</div>
+
+<script>
+    // Reload page when date changes
+    document.getElementById("stocktakeDate").addEventListener("change", function () {
+        window.location.href =
+            "{{ url_for('monthly_stocktake') }}?date=" + this.value;
+    });
+
+    // LIVE VARIANCE PREVIEW
+    document.querySelectorAll(".stocktake-input").forEach(input => {
+        input.addEventListener("input", function () {
+            const current = parseFloat(this.dataset.current);
+            const counted = parseFloat(this.value);
+            const row = this.closest("tr");
+            const varianceCell = row.querySelector(".variance-cell");
+
+            if (isNaN(counted)) {
+                varianceCell.textContent = "—";
+                varianceCell.className = "variance-cell fw-bold text-muted";
+                return;
+            }
+
+            const variance = counted - current;
+            const formatted = variance.toFixed(1);
+
+            if (variance > 0) {
+                varianceCell.textContent = `+${formatted}`;
+                varianceCell.className = "variance-cell fw-bold text-success";
+            } else if (variance < 0) {
+                varianceCell.textContent = formatted;
+                varianceCell.className = "variance-cell fw-bold text-danger";
+            } else {
+                varianceCell.textContent = "0.0";
+                varianceCell.className = "variance-cell fw-bold text-secondary";
+            }
+        });
+    });
+
+    function submitStocktake() {
+        const stocktakeData = [];
+        const selectedDate = document.getElementById("stocktakeDate").value;
+
+        if (!selectedDate) {
+            alert("Please select a stocktake date.");
+            return;
+        }
+
+        document.querySelectorAll(".stocktake-input").forEach(input => {
+            const value = parseFloat(input.value);
+            if (!isNaN(value)) {
+                stocktakeData.push({
+                    ingredient_id: input.dataset.ingredient,
+                    counted_quantity: value
+                });
+            }
+        });
+
+        if (stocktakeData.length === 0) {
+            alert("Please enter at least one stocktake value.");
+            return;
+        }
+
+        fetch("{{ url_for('submit_monthly_stocktake') }}", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                stocktake_date: selectedDate,
+                stocktake: stocktakeData
+            })
+        })
+        .then(res => res.json())
+        .then(data => {
+            const box = document.getElementById("stocktakeMessage");
+            box.classList.remove("d-none");
+
+            if (data.success) {
+                box.className = "alert alert-success";
+                box.textContent = "✅ Stocktake recorded successfully.";
+                setTimeout(() => location.reload(), 1200);
+            } else {
+                box.className = "alert alert-danger";
+                box.textContent = data.message || "❌ Failed to submit stocktake.";
+            }
+        })
+        .catch(err => {
+            console.error(err);
+            alert("❌ Unexpected error occurred.");
+        });
+    }
+</script>
+{% endblock %}

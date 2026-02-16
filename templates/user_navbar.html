@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Stock System - User</title>
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body {
+            margin: 0;
+            background: #F3F4F6;
+            font-family: Inter, -apple-system, BlinkMacSystemFont;
+            overflow-x: hidden;
+        }
+
+        /* ----------------------------------------------
+           SIDEBAR BASE
+        ---------------------------------------------- */
+        #sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            width: 240px;
+            background: #111827;
+            color: #E5E7EB;
+            padding: 20px 0;
+            overflow-y: auto;
+            transition: width 0.25s ease, transform 0.25s ease;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.15);
+            z-index: 1050;
+        }
+
+        #sidebar::-webkit-scrollbar { width: 6px; }
+        #sidebar::-webkit-scrollbar-thumb {
+            background: #374151;
+            border-radius: 4px;
+        }
+
+        /* COLLAPSED — keep text, shrink width */
+        #sidebar.collapsed {
+            width: 140px;
+        }
+
+        /* ----------------------------------------------
+           NAV LINKS
+        ---------------------------------------------- */
+        .nav-link-custom {
+            display: block;
+            padding: 12px 20px;
+            color: #D1D5DB;
+            font-size: 0.95rem;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+            overflow: hidden;
+            transition: background 0.2s;
+        }
+
+        .nav-link-custom:hover {
+            background: #1F2937;
+            color: white;
+        }
+
+        .nav-section-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            opacity: 0.65;
+            text-transform: uppercase;
+            padding: 10px 20px;
+        }
+
+        #sidebar.collapsed .nav-section-title {
+            display: none;
+        }
+
+        #sidebar.collapsed .nav-link-custom {
+            padding: 12px 12px;
+            font-size: 0.85rem;
+        }
+
+        /* ----------------------------------------------
+           CONTENT AREA
+        ---------------------------------------------- */
+        #content {
+            margin-left: 240px;
+            padding: 20px;
+            transition: margin-left 0.25s ease;
+        }
+
+        #content.expanded {
+            margin-left: 140px;
+        }
+
+        /* ----------------------------------------------
+           MOBILE RESPONSIVE
+        ---------------------------------------------- */
+        @media (max-width: 900px) {
+            #sidebar {
+                transform: translateX(-260px);
+                width: 260px;
+            }
+
+            #sidebar.open {
+                transform: translateX(0);
+            }
+
+            #content {
+                margin-left: 0 !important;
+            }
+        }
+
+        /* ----------------------------------------------
+           TOGGLE BUTTON
+        ---------------------------------------------- */
+        #toggleSidebar {
+            position: fixed;
+            top: 15px;
+            left: 250px;
+            background: #111827;
+            color: white;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: left 0.25s ease;
+            z-index: 2000;
+        }
+
+        #sidebar.collapsed ~ #toggleSidebar {
+            left: 150px;
+        }
+
+        @media (max-width: 900px) {
+            #toggleSidebar {
+                left: 15px !important;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<!-- Toggle Button -->
+<button id="toggleSidebar">☰</button>
+
+<!-- Sidebar -->
+<nav id="sidebar">
+
+    <div class="text-center mb-4">
+        <h5 class="text-white fw-bold">Store Panel</h5>
+    </div>
+
+    <div class="nav-section-title">Stocktake</div>
+    <a class="nav-link-custom" href="{{ url_for('stocktake', stocktake_type='daily') }}">Daily Stocktake</a>
+    <a class="nav-link-custom" href="{{ url_for('stocktake', stocktake_type='weekly') }}">Weekly Stocktake</a>
+
+    <div class="nav-section-title">History</div>
+    <a class="nav-link-custom" href="{{ url_for('past_daily_stocktakes') }}">Past Daily Stocktakes</a>
+    <a class="nav-link-custom" href="{{ url_for('past_weekly_stocktakes') }}">Past Weekly Stocktakes</a>
+
+    <div class="nav-section-title">Account</div>
+    <a class="nav-link-custom" href="{{ url_for('logout') }}">Logout</a>
+
+</nav>
+
+<!-- Page Content -->
+<div id="content">
+    {% block content %}{% endblock %}
+</div>
+
+<script>
+    const sidebar = document.getElementById("sidebar");
+    const content = document.getElementById("content");
+    const toggleBtn = document.getElementById("toggleSidebar");
+
+    function applyInitialState() {
+        if (window.innerWidth > 900) {
+            // Desktop default: expanded
+            sidebar.classList.remove("open");
+            sidebar.classList.remove("collapsed");
+            content.classList.remove("expanded");
+            toggleBtn.textContent = "☰";
+        } else {
+            // Mobile default: closed
+            sidebar.classList.add("collapsed");
+            content.classList.remove("expanded");
+        }
+    }
+
+    applyInitialState();
+
+    toggleBtn.addEventListener("click", () => {
+        if (window.innerWidth > 900) {
+            // Desktop collapse behavior
+            sidebar.classList.toggle("collapsed");
+            content.classList.toggle("expanded");
+        } else {
+            // Mobile slide-out panel
+            sidebar.classList.toggle("open");
+        }
+    });
+
+    window.addEventListener("resize", applyInitialState);
+</script>
+
+</body>
+</html>

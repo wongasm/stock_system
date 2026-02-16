@@ -1,0 +1,118 @@
+{% extends "user_navbar.html" %}
+
+{% block content %}
+
+<style>
+    body {
+        background: #F3F4F6;
+        font-family: Inter, -apple-system, BlinkMacSystemFont;
+    }
+
+    .welcome-wrapper {
+        min-height: 80vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 30px;
+    }
+
+    .welcome-card {
+        background: #ffffff;
+        width: 100%;
+        max-width: 600px;
+        padding: 40px 35px;
+        border-radius: 18px;
+        border: 1px solid rgba(0,0,0,0.05);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.06);
+        text-align: center;
+        animation: fadeIn 0.5s ease;
+    }
+
+    .welcome-title {
+        font-weight: 700;
+        color: #111827;
+        margin-bottom: 10px;
+        font-size: 2rem;
+    }
+
+    .welcome-subtext {
+        font-size: 1rem;
+        color: #6B7280;
+        margin-bottom: 30px;
+    }
+
+    .dashboard-btn {
+        padding: 14px;
+        border-radius: 12px;
+        font-size: 1.05rem;
+        font-weight: 600;
+        transition: 0.2s ease;
+    }
+
+    .dashboard-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 14px rgba(0,0,0,0.12);
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
+        border: none !important;
+    }
+
+    .btn-secondary {
+        background: #E5E7EB !important;
+        color: #111827 !important;
+        border: none !important;
+    }
+
+    .btn-outline-danger {
+        border-radius: 12px !important;
+        font-weight: 600;
+        padding: 12px;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+</style>
+
+
+<div class="welcome-wrapper">
+    <div class="welcome-card">
+
+        <h1 class="welcome-title">👋 Welcome, {{ current_user.username }}</h1>
+        <p class="welcome-subtext">Quick Access</p>
+
+        <div class="d-grid gap-3">
+
+            <a href="{{ url_for('stocktake', stocktake_type='daily') }}"
+               class="btn btn-primary dashboard-btn">
+                🗓️ Daily Stocktake
+            </a>
+
+            <a href="{{ url_for('stocktake', stocktake_type='weekly') }}"
+               class="btn btn-primary dashboard-btn">
+                📊 Weekly Stocktake
+            </a>
+
+            <a href="{{ url_for('past_daily_stocktakes') }}"
+               class="btn btn-secondary dashboard-btn">
+                📜 Past Daily Stocktakes
+            </a>
+
+            <a href="{{ url_for('past_weekly_stocktakes') }}"
+               class="btn btn-secondary dashboard-btn">
+                📜 Past Weekly Stocktakes
+            </a>
+
+            <a href="{{ url_for('logout') }}"
+               class="btn btn-outline-danger dashboard-btn">
+                🚪 Log Out
+            </a>
+
+        </div>
+    </div>
+</div>
+
+{% endblock %}
