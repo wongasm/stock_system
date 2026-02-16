@@ -55,9 +55,9 @@ app.config["MAIL_SERVER"] = "smtp.gmail.com"  # Change for other providers (Outl
 app.config["MAIL_PORT"] = 587  # Common for TLS
 app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USE_SSL"] = False
-app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME")  # Store in environment variables
+app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME", "binginvoice@gmail.com")  # Store in environment variables
 app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD")  # Store securely
-app.config["MAIL_DEFAULT_SENDER"] = os.getenv("MAIL_DEFAULT_SENDER")  # Default "From" email
+app.config["MAIL_DEFAULT_SENDER"] = os.getenv("MAIL_DEFAULT_SENDER", app.config["MAIL_USERNAME"])  # Default "From" email
 
 mail = Mail(app)
 
@@ -2180,8 +2180,8 @@ from email import encoders
 
 SMTP_SERVER = "smtp.gmail.com"  # ✅ Your email provider's SMTP
 SMTP_PORT = 587
-SMTP_USERNAME = "binginvoice@gmail.com"  # ✅ Replace with your email
-SMTP_PASSWORD = "ktpy xkxd byuo vssi"  # ✅ Replace with your app password
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", os.getenv("MAIL_USERNAME", "binginvoice@gmail.com"))
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", os.getenv("MAIL_PASSWORD"))
 
 @app.route("/send_invoice/<int:invoice_no>", methods=["POST"])
 @login_required

@@ -8,9 +8,9 @@ class Config:
     MAIL_PORT = 587  # TLS port
     MAIL_USE_TLS = True
     MAIL_USE_SSL = False
-    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "office@bingchillin.com.au")
-    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "Office$$88")
-    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "office@bingchillin.com.au")  # Sender email
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "binginvoice@gmail.com")
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
+    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", MAIL_USERNAME)  # Sender email
 
     # Xero Invoice Emails (Mapping Stores to Their Emails)
     STORE_EMAILS = {
