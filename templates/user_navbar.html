@@ -161,6 +161,9 @@
     <a class="nav-link-custom" href="{{ url_for('stocktake', stocktake_type='daily') }}">Daily Stocktake</a>
     <a class="nav-link-custom" href="{{ url_for('stocktake', stocktake_type='weekly') }}">Weekly Stocktake</a>
 
+    <div class="nav-section-title">Inventory</div>
+    <a class="nav-link-custom" href="{{ url_for('stock_in') }}">Stock In / Current Stock</a>
+
     <div class="nav-section-title">History</div>
     <a class="nav-link-custom" href="{{ url_for('past_daily_stocktakes') }}">Past Daily Stocktakes</a>
     <a class="nav-link-custom" href="{{ url_for('past_weekly_stocktakes') }}">Past Weekly Stocktakes</a>

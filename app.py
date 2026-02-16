@@ -1,4 +1,4 @@
-from models import db, Ingredient, Supplier, Category, StockOutRecord, Recipe, RecipeIngredient, User, Stocktake, StoreThreshold, MonthlyStocktake, Invoice, WeeklyStocktake, StockInRecord
+from models import db, Ingredient, Supplier, Category, StockOutRecord, Recipe, RecipeIngredient, User, Stocktake, StoreThreshold, MonthlyStocktake, Invoice, WeeklyStocktake, StockInRecord, StoreInventory
 from datetime import datetime, timedelta, timezone
 from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, send_file, session
 import json
@@ -15,7 +15,7 @@ from forms import LoginForm
 from flask_migrate import Migrate
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.exc import SQLAlchemyError, OperationalError, IntegrityError
-from sqlalchemy import cast, Numeric
+from sqlalchemy import cast, Numeric, and_
 from flask_mail import Mail, Message
 from dotenv import load_dotenv
 from square_api import fetch_sales_for_store
@@ -309,12 +309,40 @@ def delete_category(id):
 @login_required
 def stock_in():
     try:
+        is_store_user = current_user.role == "user"
         supplier_filter = request.args.get("supplier")
 
-        if supplier_filter:
-            ingredients = Ingredient.query.filter(Ingredient.supplier == supplier_filter).order_by(Ingredient.name).all()
+        if is_store_user:
+            ingredient_query = db.session.query(
+                Ingredient,
+                StoreInventory.quantity.label("store_quantity")
+            ).outerjoin(
+                StoreInventory,
+                and_(
+                    StoreInventory.ingredient_id == Ingredient.id,
+                    StoreInventory.store_id == current_user.id
+                )
+            )
+
+            if supplier_filter:
+                ingredient_query = ingredient_query.filter(Ingredient.supplier == supplier_filter)
+
+            rows = ingredient_query.order_by(Ingredient.name).all()
+            ingredients = [
+                {
+                    "id": ingredient.id,
+                    "name": ingredient.name,
+                    "quantity": Decimal(str(store_qty)) if store_qty is not None else Decimal("0"),
+                    "unit": ingredient.unit,
+                    "supplier": ingredient.supplier
+                }
+                for ingredient, store_qty in rows
+            ]
         else:
-            ingredients = Ingredient.query.order_by(Ingredient.name).all()
+            if supplier_filter:
+                ingredients = Ingredient.query.filter(Ingredient.supplier == supplier_filter).order_by(Ingredient.name).all()
+            else:
+                ingredients = Ingredient.query.order_by(Ingredient.name).all()
 
         suppliers = Supplier.query.order_by(Supplier.name).all()
 
@@ -329,8 +357,27 @@ def stock_in():
             # ✅ Convert input to Decimal
             stock_added = Decimal(str(stock_added_raw))
 
-            # ✅ Update ingredient quantity
-            ingredient.quantity += stock_added
+            if is_store_user:
+                store_inventory = StoreInventory.query.filter_by(
+                    store_id=current_user.id,
+                    ingredient_id=ingredient.id
+                ).first()
+
+                if not store_inventory:
+                    store_inventory = StoreInventory(
+                        store_id=current_user.id,
+                        ingredient_id=ingredient.id,
+                        quantity=Decimal("0")
+                    )
+                    db.session.add(store_inventory)
+
+                store_inventory.quantity = Decimal(str(store_inventory.quantity or 0)) + stock_added
+                new_quantity = store_inventory.quantity
+            else:
+                # ✅ Update ingredient quantity
+                ingredient.quantity += stock_added
+                db.session.merge(ingredient)
+                new_quantity = ingredient.quantity
 
             # ✅ Calculate price and total cost (safely using Decimal)
             raw_price = ingredient.price_per_unit or 0
@@ -347,14 +394,19 @@ def stock_in():
                 total_cost=total_cost
             )
 
-            # ✅ Merge and commit to handle session properly
-            db.session.merge(ingredient)
             db.session.add(record)
             db.session.commit()
 
-            return jsonify({"success": True, "new_quantity": float(ingredient.quantity)})
+            return jsonify({"success": True, "new_quantity": float(new_quantity)})
 
-        return render_template("stock_in.html", ingredients=ingredients, suppliers=suppliers, supplier_filter=supplier_filter)
+        base_template = "user_navbar.html" if is_store_user else "navbar.html"
+        return render_template(
+            "stock_in.html",
+            ingredients=ingredients,
+            suppliers=suppliers,
+            supplier_filter=supplier_filter,
+            base_template=base_template
+        )
 
     except Exception as e:
         import traceback
@@ -1363,6 +1415,24 @@ def stocktake(stocktake_type):
                         date_recorded=datetime.utcnow()
                     )
                     db.session.add(new_stock)
+
+                # ✅ For weekly stocktake, update store inventory (numeric items only)
+                if stocktake_type == "weekly" and ingredient.measurement_type != "binary":
+                    new_qty = Decimal(str(recorded_value))
+                    store_inventory = StoreInventory.query.filter_by(
+                        store_id=user_id,
+                        ingredient_id=ingredient.id
+                    ).first()
+
+                    if not store_inventory:
+                        store_inventory = StoreInventory(
+                            store_id=user_id,
+                            ingredient_id=ingredient.id,
+                            quantity=new_qty
+                        )
+                        db.session.add(store_inventory)
+                    else:
+                        store_inventory.quantity = new_qty
 
         # ✅ Commit changes to the database
         db.session.commit()

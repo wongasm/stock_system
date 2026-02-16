@@ -27,6 +27,22 @@ class Ingredient(db.Model):
     measurement_type = db.Column(db.String(10), default="numeric", nullable=False)
     is_archived = db.Column(db.Boolean, default=False, nullable=False)
 
+class StoreInventory(db.Model):
+    __tablename__ = "store_inventory"
+
+    id = db.Column(db.Integer, primary_key=True)
+    store_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    ingredient_id = db.Column(db.Integer, db.ForeignKey("ingredient.id"), nullable=False)
+    quantity = db.Column(db.Numeric(10, 1), nullable=False, default=0)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    store = db.relationship("User", backref="store_inventory")
+    ingredient = db.relationship("Ingredient", backref="store_inventory")
+
+    __table_args__ = (
+        db.UniqueConstraint("store_id", "ingredient_id", name="uq_store_inventory"),
+    )
+
 class Supplier(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False, unique=True)
