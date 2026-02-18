@@ -25,8 +25,11 @@
             <ul id="weeklyStocktakeList" class="list-group min-vh-25">
                 {% for ingredient in enabled_ingredients %}
                     <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
-                        {{ ingredient.name }}
-                        <span class="drag-handle">&#x2630;</span>
+                        <span class="item-name">{{ ingredient.name }}</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-danger move-item" data-action="remove">-</button>
+                            <span class="drag-handle">&#x2630;</span>
+                        </div>
                     </li>
                 {% endfor %}
             </ul>
@@ -37,8 +40,11 @@
             <ul id="weeklyStocktakeAvailable" class="list-group min-vh-25">
                 {% for ingredient in disabled_ingredients %}
                     <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
-                        {{ ingredient.name }}
-                        <span class="drag-handle">&#x2630;</span>
+                        <span class="item-name">{{ ingredient.name }}</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-success move-item" data-action="add">+</button>
+                            <span class="drag-handle">&#x2630;</span>
+                        </div>
                     </li>
                 {% endfor %}
             </ul>
@@ -67,6 +73,34 @@
 
         new Sortable(list, sortableOptions);
         new Sortable(available, sortableOptions);
+
+        function moveItem(button) {
+            const li = button.closest("li");
+            if (!li) return;
+
+            if (button.dataset.action === "add") {
+                list.appendChild(li);
+                button.dataset.action = "remove";
+                button.classList.remove("btn-outline-success");
+                button.classList.add("btn-outline-danger");
+                button.textContent = "-";
+            } else {
+                available.appendChild(li);
+                button.dataset.action = "add";
+                button.classList.remove("btn-outline-danger");
+                button.classList.add("btn-outline-success");
+                button.textContent = "+";
+            }
+
+            saveButton.disabled = false;
+        }
+
+        document.addEventListener("click", function (event) {
+            const button = event.target.closest(".move-item");
+            if (button) {
+                moveItem(button);
+            }
+        });
 
         storeSelect.addEventListener("change", function () {
             const storeId = storeSelect.value;
