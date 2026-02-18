@@ -59,6 +59,10 @@
             z-index: 1050;
         }
 
+        #sidebar.hidden {
+            transform: translateX(-260px);
+        }
+
         #sidebar::-webkit-scrollbar { width: 6px; }
         #sidebar::-webkit-scrollbar-thumb {
             background: rgba(148, 163, 184, 0.35);
@@ -167,6 +171,10 @@
             transition: margin-left 0.25s ease;
         }
 
+        #content.expanded {
+            margin-left: 0;
+        }
+
         /* ----------------------------------------------
            MOBILE RESPONSIVE
         ---------------------------------------------- */
@@ -255,12 +263,11 @@
     function applyLayout() {
         if (window.innerWidth > 900) {
             sidebar.classList.remove("open");
-            sidebar.style.transform = "translateX(0)";
-            content.style.marginLeft = "260px";
+            sidebar.classList.remove("hidden");
+            content.classList.remove("expanded");
         } else {
-            sidebar.classList.remove("open");
-            sidebar.style.transform = "translateX(-260px)";
-            content.style.marginLeft = "0";
+            sidebar.classList.add("hidden");
+            content.classList.add("expanded");
         }
     }
 
@@ -268,15 +275,13 @@
 
     toggleBtn.addEventListener("click", () => {
         if (window.innerWidth > 900) {
-            if (content.style.marginLeft === "0px") {
-                content.style.marginLeft = "260px";
-                sidebar.style.transform = "translateX(0)";
-            } else {
-                content.style.marginLeft = "0";
-                sidebar.style.transform = "translateX(-260px)";
-            }
+            sidebar.classList.toggle("hidden");
+            content.classList.toggle("expanded");
         } else {
             sidebar.classList.toggle("open");
+            if (sidebar.classList.contains("open")) {
+                sidebar.classList.remove("hidden");
+            }
         }
     });
 
