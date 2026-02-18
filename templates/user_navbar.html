@@ -12,11 +12,32 @@
     <!-- Bootstrap -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
     <style>
+        :root {
+            --page-bg: #f5f4ef;
+            --page-ink: #0f172a;
+            --page-ink-soft: #334155;
+            --nav-bg: #0b1220;
+            --nav-panel: #111827;
+            --nav-border: rgba(148, 163, 184, 0.16);
+            --nav-text: #e2e8f0;
+            --nav-muted: #94a3b8;
+            --nav-accent: #10b981;
+            --nav-accent-2: #f59e0b;
+            --shadow-lg: 0 18px 40px rgba(15, 23, 42, 0.25);
+        }
+
         body {
             margin: 0;
-            background: #F3F4F6;
-            font-family: Inter, -apple-system, BlinkMacSystemFont;
+            background:
+                radial-gradient(1200px 800px at 90% -10%, rgba(16, 185, 129, 0.15), transparent 60%),
+                radial-gradient(900px 700px at -10% 20%, rgba(14, 165, 233, 0.10), transparent 55%),
+                var(--page-bg);
+            color: var(--page-ink);
+            font-family: "Work Sans", "Segoe UI", sans-serif;
             overflow-x: hidden;
         }
 
@@ -28,25 +49,20 @@
             top: 0;
             left: 0;
             bottom: 0;
-            width: 240px;
-            background: #111827;
-            color: #E5E7EB;
-            padding: 20px 0;
+            width: 260px;
+            background: linear-gradient(180deg, rgba(10, 15, 28, 0.98), rgba(15, 23, 42, 0.98));
+            color: var(--nav-text);
+            padding: 18px 16px 20px;
             overflow-y: auto;
-            transition: width 0.25s ease, transform 0.25s ease;
-            box-shadow: 2px 0 10px rgba(0,0,0,0.15);
+            transition: transform 0.25s ease;
+            box-shadow: var(--shadow-lg);
             z-index: 1050;
         }
 
         #sidebar::-webkit-scrollbar { width: 6px; }
         #sidebar::-webkit-scrollbar-thumb {
-            background: #374151;
+            background: rgba(148, 163, 184, 0.35);
             border-radius: 4px;
-        }
-
-        /* COLLAPSED — keep text, shrink width */
-        #sidebar.collapsed {
-            width: 140px;
         }
 
         /* ----------------------------------------------
@@ -54,48 +70,101 @@
         ---------------------------------------------- */
         .nav-link-custom {
             display: block;
-            padding: 12px 20px;
-            color: #D1D5DB;
+            padding: 10px 14px;
+            color: var(--nav-text);
             font-size: 0.95rem;
-            white-space: nowrap;
-            text-overflow: ellipsis;
-            overflow: hidden;
-            transition: background 0.2s;
+            font-weight: 500;
+            text-decoration: none;
+            transition: 0.2s ease;
+            border-radius: 10px;
+            border: 1px solid transparent;
+            margin: 0 8px 8px;
         }
 
         .nav-link-custom:hover {
-            background: #1F2937;
+            background: rgba(148, 163, 184, 0.14);
+            border-color: rgba(148, 163, 184, 0.25);
             color: white;
+            transform: translateX(2px);
         }
 
-        .nav-section-title {
-            font-size: 0.75rem;
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 6px 8px 16px;
+            border-bottom: 1px solid var(--nav-border);
+            margin-bottom: 14px;
+        }
+
+        .brand-mark {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--nav-accent), #22d3ee);
+            color: #0b1220;
+            display: grid;
+            place-items: center;
+            font-weight: 700;
+            font-family: "Space Grotesk", sans-serif;
+        }
+
+        .brand-title {
+            font-family: "Space Grotesk", sans-serif;
             font-weight: 600;
-            opacity: 0.65;
-            text-transform: uppercase;
-            padding: 10px 20px;
+            font-size: 0.95rem;
+            letter-spacing: 0.2px;
         }
 
-        #sidebar.collapsed .nav-section-title {
+        .brand-subtitle {
+            font-size: 0.75rem;
+            color: var(--nav-muted);
+        }
+
+        .nav-group {
+            border: 1px solid var(--nav-border);
+            border-radius: 14px;
+            margin: 10px 2px;
+            background: rgba(15, 23, 42, 0.65);
+            padding: 6px 0 2px;
+        }
+
+        .nav-group summary {
+            list-style: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 1.1px;
+            color: var(--nav-muted);
+            font-weight: 600;
+        }
+
+        .nav-group summary::-webkit-details-marker {
             display: none;
         }
 
-        #sidebar.collapsed .nav-link-custom {
-            padding: 12px 12px;
-            font-size: 0.85rem;
+        .nav-group summary::after {
+            content: "▾";
+            font-size: 0.9rem;
+            color: var(--nav-muted);
+            transition: transform 0.2s ease;
+        }
+
+        .nav-group[open] summary::after {
+            transform: rotate(180deg);
         }
 
         /* ----------------------------------------------
            CONTENT AREA
         ---------------------------------------------- */
         #content {
-            margin-left: 240px;
-            padding: 20px;
+            margin-left: 260px;
+            padding: 24px;
             transition: margin-left 0.25s ease;
-        }
-
-        #content.expanded {
-            margin-left: 140px;
         }
 
         /* ----------------------------------------------
@@ -104,7 +173,6 @@
         @media (max-width: 900px) {
             #sidebar {
                 transform: translateX(-260px);
-                width: 260px;
             }
 
             #sidebar.open {
@@ -122,25 +190,16 @@
         #toggleSidebar {
             position: fixed;
             top: 15px;
-            left: 250px;
+            left: 15px;
             background: #111827;
-            color: white;
+            color: var(--nav-text);
             border: none;
             padding: 8px 14px;
-            border-radius: 8px;
+            border-radius: 10px;
             cursor: pointer;
-            transition: left 0.25s ease;
             z-index: 2000;
-        }
-
-        #sidebar.collapsed ~ #toggleSidebar {
-            left: 150px;
-        }
-
-        @media (max-width: 900px) {
-            #toggleSidebar {
-                left: 15px !important;
-            }
+            font-weight: 600;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
         }
     </style>
 </head>
@@ -148,29 +207,39 @@
 <body>
 
 <!-- Toggle Button -->
-<button id="toggleSidebar">☰</button>
+<button id="toggleSidebar">Menu</button>
 
 <!-- Sidebar -->
 <nav id="sidebar">
-
-    <div class="text-center mb-4">
-        <h5 class="text-white fw-bold">Store Panel</h5>
+    <div class="brand">
+        <div class="brand-mark">BC</div>
+        <div>
+            <div class="brand-title">Bing Chillin</div>
+            <div class="brand-subtitle">Store Panel</div>
+        </div>
     </div>
 
-    <div class="nav-section-title">Stocktake</div>
-    <a class="nav-link-custom" href="{{ url_for('stocktake', stocktake_type='daily') }}">Daily Stocktake</a>
-    <a class="nav-link-custom" href="{{ url_for('stocktake', stocktake_type='weekly') }}">Weekly Stocktake</a>
+    <details class="nav-group" open>
+        <summary>Stocktake</summary>
+        <a class="nav-link-custom" href="{{ url_for('stocktake', stocktake_type='daily') }}">Daily Stocktake</a>
+        <a class="nav-link-custom" href="{{ url_for('stocktake', stocktake_type='weekly') }}">Weekly Stocktake</a>
+    </details>
 
-    <div class="nav-section-title">Inventory</div>
-    <a class="nav-link-custom" href="{{ url_for('stock_in') }}">Stock In / Current Stock</a>
+    <details class="nav-group">
+        <summary>Inventory</summary>
+        <a class="nav-link-custom" href="{{ url_for('stock_in') }}">Stock In / Current Stock</a>
+    </details>
 
-    <div class="nav-section-title">History</div>
-    <a class="nav-link-custom" href="{{ url_for('past_daily_stocktakes') }}">Past Daily Stocktakes</a>
-    <a class="nav-link-custom" href="{{ url_for('past_weekly_stocktakes') }}">Past Weekly Stocktakes</a>
+    <details class="nav-group">
+        <summary>History</summary>
+        <a class="nav-link-custom" href="{{ url_for('past_daily_stocktakes') }}">Past Daily Stocktakes</a>
+        <a class="nav-link-custom" href="{{ url_for('past_weekly_stocktakes') }}">Past Weekly Stocktakes</a>
+    </details>
 
-    <div class="nav-section-title">Account</div>
-    <a class="nav-link-custom" href="{{ url_for('logout') }}">Logout</a>
-
+    <details class="nav-group">
+        <summary>Account</summary>
+        <a class="nav-link-custom" href="{{ url_for('logout') }}">Logout</a>
+    </details>
 </nav>
 
 <!-- Page Content -->
@@ -183,34 +252,35 @@
     const content = document.getElementById("content");
     const toggleBtn = document.getElementById("toggleSidebar");
 
-    function applyInitialState() {
+    function applyLayout() {
         if (window.innerWidth > 900) {
-            // Desktop default: expanded
             sidebar.classList.remove("open");
-            sidebar.classList.remove("collapsed");
-            content.classList.remove("expanded");
-            toggleBtn.textContent = "☰";
+            sidebar.style.transform = "translateX(0)";
+            content.style.marginLeft = "260px";
         } else {
-            // Mobile default: closed
-            sidebar.classList.add("collapsed");
-            content.classList.remove("expanded");
+            sidebar.classList.remove("open");
+            sidebar.style.transform = "translateX(-260px)";
+            content.style.marginLeft = "0";
         }
     }
 
-    applyInitialState();
+    applyLayout();
 
     toggleBtn.addEventListener("click", () => {
         if (window.innerWidth > 900) {
-            // Desktop collapse behavior
-            sidebar.classList.toggle("collapsed");
-            content.classList.toggle("expanded");
+            if (content.style.marginLeft === "0px") {
+                content.style.marginLeft = "260px";
+                sidebar.style.transform = "translateX(0)";
+            } else {
+                content.style.marginLeft = "0";
+                sidebar.style.transform = "translateX(-260px)";
+            }
         } else {
-            // Mobile slide-out panel
             sidebar.classList.toggle("open");
         }
     });
 
-    window.addEventListener("resize", applyInitialState);
+    window.addEventListener("resize", applyLayout);
 </script>
 
 </body>

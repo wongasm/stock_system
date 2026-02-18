@@ -15,11 +15,32 @@
     <!-- ✅ Select2 CSS (REQUIRED for ingredient search) -->
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
 
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
     <style>
+        :root {
+            --page-bg: #f5f4ef;
+            --page-ink: #0f172a;
+            --page-ink-soft: #334155;
+            --nav-bg: #0b1220;
+            --nav-panel: #111827;
+            --nav-border: rgba(148, 163, 184, 0.16);
+            --nav-text: #e2e8f0;
+            --nav-muted: #94a3b8;
+            --nav-accent: #10b981;
+            --nav-accent-2: #f59e0b;
+            --shadow-lg: 0 18px 40px rgba(15, 23, 42, 0.25);
+        }
+
         body {
             margin: 0;
-            background: #F3F4F6;
-            font-family: Inter, -apple-system, BlinkMacSystemFont;
+            background:
+                radial-gradient(1200px 800px at 90% -10%, rgba(16, 185, 129, 0.15), transparent 60%),
+                radial-gradient(900px 700px at -10% 20%, rgba(14, 165, 233, 0.10), transparent 55%),
+                var(--page-bg);
+            color: var(--page-ink);
+            font-family: "Work Sans", "Segoe UI", sans-serif;
         }
 
         /* ================= SIDEBAR ================= */
@@ -28,18 +49,19 @@
             top: 0;
             bottom: 0;
             left: 0;
-            width: 260px;
-            background: #111827;
-            color: #E5E7EB;
-            padding-top: 20px;
+            width: 270px;
+            background: linear-gradient(180deg, rgba(10, 15, 28, 0.98), rgba(15, 23, 42, 0.98));
+            color: var(--nav-text);
+            padding: 18px 16px 20px;
             overflow-y: auto;
             transform: translateX(0);
             transition: transform 0.3s ease;
             z-index: 2000;
+            box-shadow: var(--shadow-lg);
         }
 
         #sidebar.hidden {
-            transform: translateX(-260px);
+            transform: translateX(-270px);
         }
 
         #sidebar::-webkit-scrollbar { width: 6px; }
@@ -50,31 +72,106 @@
 
         .nav-link-custom {
             display: block;
-            padding: 12px 22px;
-            color: #D1D5DB;
+            padding: 10px 14px;
+            color: var(--nav-text);
             font-size: 0.95rem;
+            font-weight: 500;
             text-decoration: none;
             transition: 0.2s ease;
+            border-radius: 10px;
+            border: 1px solid transparent;
+            margin: 0 8px 8px;
         }
 
         .nav-link-custom:hover {
-            background: #1F2937;
+            background: rgba(148, 163, 184, 0.14);
+            border-color: rgba(148, 163, 184, 0.25);
             color: white;
+            transform: translateX(2px);
         }
 
-        .nav-section-title {
-            font-size: 0.75rem;
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 6px 8px 16px;
+            border-bottom: 1px solid var(--nav-border);
+            margin-bottom: 14px;
+        }
+
+        .brand-mark {
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, var(--nav-accent), #22d3ee);
+            color: #0b1220;
+            display: grid;
+            place-items: center;
+            font-weight: 700;
+            font-family: "Space Grotesk", sans-serif;
+        }
+
+        .brand-title {
+            font-family: "Space Grotesk", sans-serif;
             font-weight: 600;
-            opacity: 0.6;
+            font-size: 1rem;
+            letter-spacing: 0.2px;
+        }
+
+        .brand-subtitle {
+            font-size: 0.75rem;
+            color: var(--nav-muted);
+        }
+
+        .nav-group {
+            border: 1px solid var(--nav-border);
+            border-radius: 14px;
+            margin: 10px 2px;
+            background: rgba(15, 23, 42, 0.65);
+            padding: 6px 0 2px;
+        }
+
+        .nav-group summary {
+            list-style: none;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 16px 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
             text-transform: uppercase;
-            padding: 10px 22px;
-            margin-top: 15px;
+            letter-spacing: 1.1px;
+            color: var(--nav-muted);
+            font-weight: 600;
+        }
+
+        .nav-group summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .nav-group summary::after {
+            content: "▾";
+            font-size: 0.9rem;
+            color: var(--nav-muted);
+            transition: transform 0.2s ease;
+        }
+
+        .nav-group[open] summary::after {
+            transform: rotate(180deg);
+        }
+
+        .nav-group .nav-link-custom {
+            margin-bottom: 6px;
+        }
+
+        .nav-group .nav-link-custom:last-child {
+            margin-bottom: 10px;
         }
 
         /* ================= CONTENT ================= */
         #content {
-            margin-left: 260px;
-            padding: 20px;
+            margin-left: 270px;
+            padding: 24px;
             transition: margin-left 0.3s ease;
         }
 
@@ -85,7 +182,7 @@
         /* ================= MOBILE ================= */
         @media (max-width: 900px) {
             #sidebar {
-                transform: translateX(-260px);
+                transform: translateX(-270px);
             }
             #sidebar.show {
                 transform: translateX(0);
@@ -101,12 +198,14 @@
             top: 15px;
             left: 15px;
             background: #111827;
-            color: white;
+            color: var(--nav-text);
             border: none;
             padding: 8px 14px;
-            border-radius: 8px;
+            border-radius: 10px;
             z-index: 3001;
             cursor: pointer;
+            font-weight: 600;
+            box-shadow: 0 8px 20px rgba(15, 23, 42, 0.25);
         }
     </style>
 </head>
@@ -118,41 +217,58 @@
 <button id="toggleSidebar">Menu</button>
 
 <nav id="sidebar">
-    <div class="text-center mb-4">
-        <h5 class="text-white fw-bold">Stock System</h5>
+    <div class="brand">
+        <div class="brand-mark">BC</div>
+        <div>
+            <div class="brand-title">Bing Chillin</div>
+            <div class="brand-subtitle">Admin Console</div>
+        </div>
     </div>
 
-    <div class="nav-section-title">Main</div>
-    <a class="nav-link-custom" href="{{ url_for('index') }}">Ingredients</a>
-    <a class="nav-link-custom" href="{{ url_for('stock_in') }}">Stock In</a>
-    <a class="nav-link-custom" href="{{ url_for('stock_out') }}">Stock Out</a>
-    <a class="nav-link-custom" href="{{ url_for('stock_out_history') }}">Stock Out History</a>
-    <a class="nav-link-custom" href="{{ url_for('invoice_page') }}">Invoices</a>
+    <details class="nav-group" open>
+        <summary>Inventory</summary>
+        <a class="nav-link-custom" href="{{ url_for('index') }}">Ingredients</a>
+        <a class="nav-link-custom" href="{{ url_for('stock_in') }}">Stock In</a>
+        <a class="nav-link-custom" href="{{ url_for('stock_out') }}">Stock Out</a>
+        <a class="nav-link-custom" href="{{ url_for('stock_out_history') }}">Stock Out History</a>
+        <a class="nav-link-custom" href="{{ url_for('invoice_page') }}">Invoices</a>
+    </details>
 
-    <div class="nav-section-title">Production</div>
-    <a class="nav-link-custom" href="{{ url_for('manage_recipes') }}">Recipe Management</a>
-    <a class="nav-link-custom" href="{{ url_for('quantity_made') }}">Quantity Made</a>
-    <a class="nav-link-custom" href="{{ url_for('freezer_pack_needs') }}">Freezer Packs</a>
+    <details class="nav-group">
+        <summary>Production</summary>
+        <a class="nav-link-custom" href="{{ url_for('manage_recipes') }}">Recipe Management</a>
+        <a class="nav-link-custom" href="{{ url_for('quantity_made') }}">Quantity Made</a>
+        <a class="nav-link-custom" href="{{ url_for('freezer_pack_needs') }}">Freezer Packs</a>
+    </details>
 
-    <div class="nav-section-title">Reports</div>
-    <a class="nav-link-custom" href="{{ url_for('reporting_page') }}">Reports</a>
-    <a class="nav-link-custom" href="{{ url_for('purchasing') }}">Purchasing</a>
-    <a class="nav-link-custom" href="{{ url_for('sales_report') }}">Sales Report</a>
-    <a class="nav-link-custom" href="{{ url_for('monthly_stocktake_report') }}">Monthly Report</a>
+    <details class="nav-group">
+        <summary>Stocktake</summary>
+        <a class="nav-link-custom" href="{{ url_for('admin_stocktake') }}">Daily Stocktake</a>
+        <a class="nav-link-custom" href="{{ url_for('admin_weekly_stocktake') }}">Weekly Stocktake</a>
+        <a class="nav-link-custom" href="{{ url_for('monthly_stocktake') }}">Monthly Stocktake</a>
+    </details>
 
-    <div class="nav-section-title">Stocktake</div>
-    <a class="nav-link-custom" href="{{ url_for('admin_stocktake') }}">Daily Stocktake</a>
-    <a class="nav-link-custom" href="{{ url_for('admin_weekly_stocktake') }}">Weekly Stocktake</a>
-    <a class="nav-link-custom" href="{{ url_for('monthly_stocktake') }}">Monthly</a>
+    <details class="nav-group">
+        <summary>Reports</summary>
+        <a class="nav-link-custom" href="{{ url_for('reporting_page') }}">Reports</a>
+        <a class="nav-link-custom" href="{{ url_for('purchasing') }}">Purchasing</a>
+        <a class="nav-link-custom" href="{{ url_for('sales_report') }}">Sales Report</a>
+        <a class="nav-link-custom" href="{{ url_for('monthly_stocktake_report') }}">Monthly Report</a>
+    </details>
 
+    <details class="nav-group">
+        <summary>Settings</summary>
+        <a class="nav-link-custom" href="{{ url_for('manage_thresholds') }}">Thresholds</a>
+        <a class="nav-link-custom" href="{{ url_for('manage_stocktake_order') }}">Stocktake Order</a>
+        <a class="nav-link-custom" href="{{ url_for('manage_weekly_stocktake_order') }}">Weekly Order</a>
+        <a class="nav-link-custom" href="{{ url_for('manage_suppliers') }}">Suppliers</a>
+        <a class="nav-link-custom" href="{{ url_for('manage_categories') }}">Categories</a>
+    </details>
 
-    <div class="nav-section-title">Settings</div>
-    <a class="nav-link-custom" href="{{ url_for('manage_thresholds') }}">Thresholds</a>
-    <a class="nav-link-custom" href="{{ url_for('manage_stocktake_order') }}">Stocktake Order</a>
-    <a class="nav-link-custom" href="{{ url_for('manage_weekly_stocktake_order') }}">Weekly Order</a>
-    <a class="nav-link-custom" href="{{ url_for('manage_suppliers') }}">Suppliers</a>
-    <a class="nav-link-custom" href="{{ url_for('manage_categories') }}">Categories</a>
-    <a class="nav-link-custom" href="{{ url_for('logout') }}">Logout</a>
+    <details class="nav-group">
+        <summary>Account</summary>
+        <a class="nav-link-custom" href="{{ url_for('logout') }}">Logout</a>
+    </details>
 </nav>
 
 {% endif %}
