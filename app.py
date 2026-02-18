@@ -1364,20 +1364,8 @@ def blank_page():
         Ingredient.daily_stocktake == True
     ).order_by(Ingredient.order_position.asc()).all()
 
-    daily_items = [
-        {
-            "id": ingredient.id,
-            "name": ingredient.name,
-            "unit": ingredient.unit,
-            "category": ingredient.category,
-            "supplier": ingredient.supplier,
-            "quantity": store_qty
-        }
-        for ingredient, store_qty in daily_rows
-    ]
-
     weekly_customized = False
-    weekly_items = []
+    weekly_rows = []
 
     store_items = StoreWeeklyItem.query.filter_by(
         store_id=user_id,
@@ -1403,17 +1391,8 @@ def blank_page():
         ingredient_map = {ingredient.id: (ingredient, store_qty) for ingredient, store_qty in ingredient_rows}
         for ingredient_id in ingredient_ids:
             row = ingredient_map.get(ingredient_id)
-            if not row:
-                continue
-            ingredient, store_qty = row
-            weekly_items.append({
-                "id": ingredient.id,
-                "name": ingredient.name,
-                "unit": ingredient.unit,
-                "category": ingredient.category,
-                "supplier": ingredient.supplier,
-                "quantity": store_qty
-            })
+            if row:
+                weekly_rows.append(row)
     else:
         weekly_rows = db.session.query(
             Ingredient,
@@ -1428,22 +1407,46 @@ def blank_page():
             Ingredient.weekly_stocktake == True
         ).order_by(Ingredient.weekly_order_position.asc()).all()
 
-        weekly_items = [
-            {
+        weekly_rows = weekly_rows
+
+    daily_map = {}
+    for ingredient, store_qty in daily_rows:
+        daily_map[ingredient.id] = {
+            "id": ingredient.id,
+            "name": ingredient.name,
+            "unit": ingredient.unit,
+            "category": ingredient.category,
+            "supplier": ingredient.supplier,
+            "quantity": store_qty,
+            "daily": True,
+            "weekly": False
+        }
+
+    combined = []
+    for ingredient_id, item in daily_map.items():
+        combined.append(item)
+
+    for ingredient, store_qty in weekly_rows:
+        existing = daily_map.get(ingredient.id)
+        if existing:
+            existing["weekly"] = True
+            if existing["quantity"] is None:
+                existing["quantity"] = store_qty
+        else:
+            combined.append({
                 "id": ingredient.id,
                 "name": ingredient.name,
                 "unit": ingredient.unit,
                 "category": ingredient.category,
                 "supplier": ingredient.supplier,
-                "quantity": store_qty
-            }
-            for ingredient, store_qty in weekly_rows
-        ]
+                "quantity": store_qty,
+                "daily": False,
+                "weekly": True
+            })
 
     return render_template(
         "blank.html",
-        daily_items=daily_items,
-        weekly_items=weekly_items,
+        items=combined,
         weekly_customized=weekly_customized
     )
 
