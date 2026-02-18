@@ -4,38 +4,84 @@
 <div class="container">
     <h2>Manage Weekly Stocktake Order</h2>
 
-    <p>Drag and drop the ingredients to set their display order for weekly stocktake.</p>
+    <p>Choose a store, then drag ingredients between lists and reorder the weekly stocktake list.</p>
 
-    <ul id="weeklyStocktakeList" class="list-group">
-        {% for ingredient in ingredients %}
-            <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
-                {{ ingredient.name }}
-                <span class="drag-handle">&#x2630;</span>
-            </li>
-        {% endfor %}
-    </ul>
+    <div class="row mb-3">
+        <div class="col-md-6">
+            <label class="form-label">Select Store</label>
+            <select id="storeSelect" class="form-select">
+                {% for store in stores %}
+                    <option value="{{ store.id }}" {% if store.id|string == selected_store %}selected{% endif %}>
+                        {{ store.username }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
 
-    <button id="saveWeeklyOrder" class="btn btn-success mt-3">Save Order</button>
+    <div class="row g-3">
+        <div class="col-md-6">
+            <h5>Included in Weekly Stocktake</h5>
+            <ul id="weeklyStocktakeList" class="list-group min-vh-25">
+                {% for ingredient in enabled_ingredients %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
+                        {{ ingredient.name }}
+                        <span class="drag-handle">&#x2630;</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <div class="col-md-6">
+            <h5>Available Ingredients</h5>
+            <ul id="weeklyStocktakeAvailable" class="list-group min-vh-25">
+                {% for ingredient in disabled_ingredients %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
+                        {{ ingredient.name }}
+                        <span class="drag-handle">&#x2630;</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <button id="saveWeeklyOrder" class="btn btn-success mt-3">Save Changes</button>
 </div>
 
 <!-- ✅ JavaScript for Drag-and-Drop -->
 <script>
     document.addEventListener("DOMContentLoaded", function () {
         const list = document.getElementById("weeklyStocktakeList");
+        const available = document.getElementById("weeklyStocktakeAvailable");
         const saveButton = document.getElementById("saveWeeklyOrder");
+        const storeSelect = document.getElementById("storeSelect");
 
-        new Sortable(list, {
+        const sortableOptions = {
+            group: "weekly-stocktake",
             animation: 150,
             handle: ".drag-handle",
             onEnd: function () {
                 saveButton.disabled = false;
             }
+        };
+
+        new Sortable(list, sortableOptions);
+        new Sortable(available, sortableOptions);
+
+        storeSelect.addEventListener("change", function () {
+            const storeId = storeSelect.value;
+            window.location.href = `{{ url_for('manage_weekly_stocktake_order') }}?store_id=${storeId}`;
         });
 
         saveButton.addEventListener("click", function () {
-            let order = [];
-            document.querySelectorAll("#weeklyStocktakeList li").forEach((item, index) => {
-                order.push(item.getAttribute("data-id"));
+            let enabledOrder = [];
+            let disabledItems = [];
+
+            document.querySelectorAll("#weeklyStocktakeList li").forEach((item) => {
+                enabledOrder.push(item.getAttribute("data-id"));
+            });
+            document.querySelectorAll("#weeklyStocktakeAvailable li").forEach((item) => {
+                disabledItems.push(item.getAttribute("data-id"));
             });
 
             fetch("{{ url_for('update_weekly_stocktake_order') }}", {
@@ -43,12 +89,16 @@
                 headers: {
                     "Content-Type": "application/json"
                 },
-                body: JSON.stringify({ order: order })
+                body: JSON.stringify({
+                    store_id: storeSelect.value,
+                    enabled_order: enabledOrder,
+                    disabled: disabledItems
+                })
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert("Weekly Stocktake order updated successfully!");
+                    alert("Weekly Stocktake list updated successfully!");
                     location.reload();
                 } else {
                     alert("Failed to update order.");

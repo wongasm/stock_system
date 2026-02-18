@@ -111,6 +111,23 @@ class StoreThreshold(db.Model):
     store = db.relationship("User", backref="thresholds")
     ingredient = db.relationship("Ingredient", backref="thresholds")
 
+class StoreWeeklyItem(db.Model):
+    __tablename__ = "store_weekly_item"
+
+    id = db.Column(db.Integer, primary_key=True)
+    store_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    ingredient_id = db.Column(db.Integer, db.ForeignKey("ingredient.id"), nullable=False)
+    enabled = db.Column(db.Boolean, default=False, nullable=False)
+    order_position = db.Column(db.Integer, default=0, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    store = db.relationship("User", backref="weekly_items")
+    ingredient = db.relationship("Ingredient", backref="weekly_items")
+
+    __table_args__ = (
+        db.UniqueConstraint("store_id", "ingredient_id", name="uq_store_weekly_item"),
+    )
+
 class MonthlyStocktake(db.Model):
     __tablename__ = "monthly_stocktake"
 

@@ -1,4 +1,4 @@
-from models import db, Ingredient, Supplier, Category, StockOutRecord, Recipe, RecipeIngredient, User, Stocktake, StoreThreshold, MonthlyStocktake, Invoice, WeeklyStocktake, StockInRecord, StoreInventory
+from models import db, Ingredient, Supplier, Category, StockOutRecord, Recipe, RecipeIngredient, User, Stocktake, StoreThreshold, StoreWeeklyItem, MonthlyStocktake, Invoice, WeeklyStocktake, StockInRecord, StoreInventory
 from datetime import datetime, timedelta, timezone
 from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, send_file, session
 import json
@@ -1364,7 +1364,22 @@ def stocktake(stocktake_type):
     if stocktake_type == "daily":
         ingredients = Ingredient.query.filter_by(daily_stocktake=True).order_by(Ingredient.order_position.asc()).all()
     elif stocktake_type == "weekly":
-        ingredients = Ingredient.query.filter_by(weekly_stocktake=True).order_by(Ingredient.weekly_order_position.asc()).all()
+        store_items = StoreWeeklyItem.query.filter_by(
+            store_id=user_id,
+            enabled=True
+        ).order_by(StoreWeeklyItem.order_position.asc()).all()
+
+        if store_items:
+            ingredient_ids = [item.ingredient_id for item in store_items]
+            ingredient_rows = Ingredient.query.filter(Ingredient.id.in_(ingredient_ids)).all()
+            ingredient_map = {ingredient.id: ingredient for ingredient in ingredient_rows}
+            ingredients = [
+                ingredient_map[item_id]
+                for item_id in ingredient_ids
+                if item_id in ingredient_map
+            ]
+        else:
+            ingredients = Ingredient.query.filter_by(weekly_stocktake=True).order_by(Ingredient.weekly_order_position.asc()).all()
     else:
         flash("Invalid stocktake type.", "danger")
         return redirect(url_for("index"))
@@ -1478,8 +1493,18 @@ def admin_stocktake():
         query = query.filter(Stocktake.stocktake_type == "daily") \
                      .order_by(Ingredient.order_position.asc())  # ✅ Use the same ordering as the user side
     elif stocktake_type == "weekly":
-        query = query.filter(Stocktake.stocktake_type == "weekly") \
-                     .order_by(Ingredient.weekly_order_position.asc())  # ✅ Use weekly order position
+        query = query.filter(Stocktake.stocktake_type == "weekly")
+
+        if selected_store and selected_store != "all":
+            query = query.outerjoin(
+                StoreWeeklyItem,
+                and_(
+                    StoreWeeklyItem.store_id == Stocktake.user_id,
+                    StoreWeeklyItem.ingredient_id == Stocktake.ingredient_id
+                )
+            ).order_by(func.coalesce(StoreWeeklyItem.order_position, 9999))
+        else:
+            query = query.order_by(Ingredient.weekly_order_position.asc())  # ✅ Use weekly order position
 
     # ✅ Apply store filter if selected
     if selected_store and selected_store != "all":
@@ -1522,9 +1547,11 @@ def admin_weekly_stocktake():
         Stocktake.quantity_on_hand,
         StoreThreshold.threshold,
         Stocktake.date_recorded,
-        Ingredient.weekly_order_position
+        Ingredient.weekly_order_position,
+        StoreWeeklyItem.order_position.label("store_weekly_order")
     ).join(User, Stocktake.user_id == User.id) \
      .join(Ingredient, Stocktake.ingredient_id == Ingredient.id) \
+     .outerjoin(StoreWeeklyItem, (StoreWeeklyItem.store_id == Stocktake.user_id) & (StoreWeeklyItem.ingredient_id == Stocktake.ingredient_id)) \
      .outerjoin(StoreThreshold, (StoreThreshold.store_id == Stocktake.user_id) & (StoreThreshold.ingredient_id == Stocktake.ingredient_id)) \
      .filter(Stocktake.stocktake_type == "weekly") \
      .filter(func.date(Stocktake.date_recorded) == selected_date_obj)
@@ -1532,7 +1559,10 @@ def admin_weekly_stocktake():
     if selected_store != "all":
         query = query.filter(Stocktake.user_id == selected_store)
 
-    query = query.order_by(Ingredient.weekly_order_position.asc())
+    if selected_store != "all":
+        query = query.order_by(func.coalesce(StoreWeeklyItem.order_position, Ingredient.weekly_order_position, 9999))
+    else:
+        query = query.order_by(Ingredient.weekly_order_position.asc())
     raw_stocktakes = query.limit(100).all()
 
     # ✅ Format stocktakes
@@ -1599,11 +1629,30 @@ def manage_thresholds():
     # ✅ Get all stores
     stores = User.query.filter_by(role="user").all()
 
-    # ✅ Fetch only ingredients that are part of the weekly stocktake
-    ingredients = Ingredient.query.filter_by(weekly_stocktake=True).all()
-
     # ✅ Store filter for better usability
     selected_store = request.args.get("store_id", "all")
+
+    ingredients = []
+    use_store_items = False
+    if selected_store != "all":
+        store_items = StoreWeeklyItem.query.filter_by(
+            store_id=selected_store,
+            enabled=True
+        ).order_by(StoreWeeklyItem.order_position.asc()).all()
+        if store_items:
+            use_store_items = True
+            ingredient_ids = [item.ingredient_id for item in store_items]
+            ingredient_rows = Ingredient.query.filter(Ingredient.id.in_(ingredient_ids)).all()
+            ingredient_map = {ingredient.id: ingredient for ingredient in ingredient_rows}
+            ingredients = [
+                ingredient_map[item_id]
+                for item_id in ingredient_ids
+                if item_id in ingredient_map
+            ]
+        else:
+            ingredients = Ingredient.query.filter_by(weekly_stocktake=True).all()
+    else:
+        ingredients = Ingredient.query.filter_by(weekly_stocktake=True).all()
 
     if request.method == "POST":
         store_id = request.form.get("store_id")
@@ -1634,15 +1683,17 @@ def manage_thresholds():
         FROM store_thresholds st
         JOIN user u ON st.store_id = u.id
         JOIN ingredient i ON st.ingredient_id = i.id
-        WHERE i.weekly_stocktake = 1
     """
     params = {}
 
     if selected_store != "all":
-        query += " AND st.store_id = :store_id"
+        query += " WHERE st.store_id = :store_id"
         params["store_id"] = selected_store
 
     thresholds = db.session.execute(text(query), params).mappings().all()
+    if use_store_items:
+        allowed_ids = {ingredient.id for ingredient in ingredients}
+        thresholds = [row for row in thresholds if row["ingredient_id"] in allowed_ids]
 
     return render_template(
         "admin_manage_thresholds.html",
@@ -1723,9 +1774,54 @@ def manage_weekly_stocktake_order():
         flash("Access denied.", "danger")
         return redirect(url_for("index"))
 
-    ingredients = Ingredient.query.filter_by(weekly_stocktake=True).order_by(Ingredient.weekly_order_position.asc()).all()
+    stores = User.query.filter_by(role="user").all()
+    selected_store = request.args.get("store_id")
 
-    return render_template("admin_manage_weekly_stocktake_order.html", ingredients=ingredients)
+    if not selected_store and stores:
+        selected_store = str(stores[0].id)
+
+    all_ingredients = Ingredient.query.order_by(Ingredient.name.asc()).all()
+    enabled_ingredients = []
+    disabled_ingredients = []
+
+    store_items = []
+    if selected_store:
+        store_items = StoreWeeklyItem.query.filter_by(store_id=selected_store).all()
+
+    if store_items:
+        store_item_map = {item.ingredient_id: item for item in store_items}
+        enabled_items = sorted(
+            [item for item in store_items if item.enabled],
+            key=lambda item: item.order_position
+        )
+        enabled_ids = [item.ingredient_id for item in enabled_items]
+        ingredient_map = {ingredient.id: ingredient for ingredient in all_ingredients}
+        enabled_ingredients = [
+            ingredient_map[ingredient_id]
+            for ingredient_id in enabled_ids
+            if ingredient_id in ingredient_map
+        ]
+        disabled_ingredients = [
+            ingredient for ingredient in all_ingredients
+            if ingredient.id not in set(enabled_ids)
+        ]
+    else:
+        enabled_ingredients = Ingredient.query.filter_by(
+            weekly_stocktake=True
+        ).order_by(Ingredient.weekly_order_position.asc()).all()
+        enabled_ids = {ingredient.id for ingredient in enabled_ingredients}
+        disabled_ingredients = [
+            ingredient for ingredient in all_ingredients
+            if ingredient.id not in enabled_ids
+        ]
+
+    return render_template(
+        "admin_manage_weekly_stocktake_order.html",
+        stores=stores,
+        selected_store=selected_store,
+        enabled_ingredients=enabled_ingredients,
+        disabled_ingredients=disabled_ingredients
+    )
 
 @app.route("/admin/update_weekly_stocktake_order", methods=["POST"])
 @login_required
@@ -1734,7 +1830,51 @@ def update_weekly_stocktake_order():
         flash("Access denied.", "danger")
         return redirect(url_for("index"))
 
-    order_data = request.json.get("order")
+    payload = request.json or {}
+    order_data = payload.get("enabled_order")
+    disabled_data = payload.get("disabled")
+    store_id = payload.get("store_id")
+
+    if store_id and order_data is not None and disabled_data is not None:
+        try:
+            store_id_int = int(store_id)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "Invalid store_id"})
+
+        enabled_ids = [int(item_id) for item_id in order_data]
+        disabled_ids = [int(item_id) for item_id in disabled_data]
+        all_ids = list(set(enabled_ids + disabled_ids))
+
+        existing_rows = StoreWeeklyItem.query.filter(
+            StoreWeeklyItem.store_id == store_id_int,
+            StoreWeeklyItem.ingredient_id.in_(all_ids)
+        ).all()
+        existing_map = {row.ingredient_id: row for row in existing_rows}
+
+        for index, ingredient_id in enumerate(enabled_ids):
+            row = existing_map.get(ingredient_id)
+            if not row:
+                row = StoreWeeklyItem(
+                    store_id=store_id_int,
+                    ingredient_id=ingredient_id
+                )
+                db.session.add(row)
+            row.enabled = True
+            row.order_position = index
+
+        for ingredient_id in disabled_ids:
+            row = existing_map.get(ingredient_id)
+            if not row:
+                row = StoreWeeklyItem(
+                    store_id=store_id_int,
+                    ingredient_id=ingredient_id
+                )
+                db.session.add(row)
+            row.enabled = False
+            row.order_position = 0
+
+        db.session.commit()
+        return jsonify({"success": True})
 
     if order_data:
         for index, ingredient_id in enumerate(order_data):
