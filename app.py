@@ -1346,7 +1346,106 @@ def logout():
 @app.route('/blank_page')
 @login_required
 def blank_page():
-    return render_template('blank.html')
+    if current_user.role != "user":
+        return redirect(url_for("index"))
+
+    user_id = current_user.id
+
+    daily_rows = db.session.query(
+        Ingredient,
+        StoreInventory.quantity.label("store_quantity")
+    ).outerjoin(
+        StoreInventory,
+        and_(
+            StoreInventory.ingredient_id == Ingredient.id,
+            StoreInventory.store_id == user_id
+        )
+    ).filter(
+        Ingredient.daily_stocktake == True
+    ).order_by(Ingredient.order_position.asc()).all()
+
+    daily_items = [
+        {
+            "id": ingredient.id,
+            "name": ingredient.name,
+            "unit": ingredient.unit,
+            "category": ingredient.category,
+            "supplier": ingredient.supplier,
+            "quantity": store_qty
+        }
+        for ingredient, store_qty in daily_rows
+    ]
+
+    weekly_customized = False
+    weekly_items = []
+
+    store_items = StoreWeeklyItem.query.filter_by(
+        store_id=user_id,
+        enabled=True
+    ).order_by(StoreWeeklyItem.order_position.asc()).all()
+
+    if store_items:
+        weekly_customized = True
+        ingredient_ids = [item.ingredient_id for item in store_items]
+        ingredient_rows = db.session.query(
+            Ingredient,
+            StoreInventory.quantity.label("store_quantity")
+        ).outerjoin(
+            StoreInventory,
+            and_(
+                StoreInventory.ingredient_id == Ingredient.id,
+                StoreInventory.store_id == user_id
+            )
+        ).filter(
+            Ingredient.id.in_(ingredient_ids)
+        ).all()
+
+        ingredient_map = {ingredient.id: (ingredient, store_qty) for ingredient, store_qty in ingredient_rows}
+        for ingredient_id in ingredient_ids:
+            row = ingredient_map.get(ingredient_id)
+            if not row:
+                continue
+            ingredient, store_qty = row
+            weekly_items.append({
+                "id": ingredient.id,
+                "name": ingredient.name,
+                "unit": ingredient.unit,
+                "category": ingredient.category,
+                "supplier": ingredient.supplier,
+                "quantity": store_qty
+            })
+    else:
+        weekly_rows = db.session.query(
+            Ingredient,
+            StoreInventory.quantity.label("store_quantity")
+        ).outerjoin(
+            StoreInventory,
+            and_(
+                StoreInventory.ingredient_id == Ingredient.id,
+                StoreInventory.store_id == user_id
+            )
+        ).filter(
+            Ingredient.weekly_stocktake == True
+        ).order_by(Ingredient.weekly_order_position.asc()).all()
+
+        weekly_items = [
+            {
+                "id": ingredient.id,
+                "name": ingredient.name,
+                "unit": ingredient.unit,
+                "category": ingredient.category,
+                "supplier": ingredient.supplier,
+                "quantity": store_qty
+            }
+            for ingredient, store_qty in weekly_rows
+        ]
+
+    return render_template(
+        "blank.html",
+        daily_items=daily_items,
+        weekly_items=weekly_items,
+        weekly_customized=weekly_customized
+    )
 
 @app.route("/stocktake/<stocktake_type>", methods=["GET", "POST"])
 @login_required

@@ -4,119 +4,178 @@
 
 <style>
     body {
-        background: #F3F4F6;
-        font-family: Inter, -apple-system, BlinkMacSystemFont;
+        background: #F5F4EF;
+        font-family: "Work Sans", "Segoe UI", sans-serif;
+        color: #0f172a;
     }
 
-    .welcome-wrapper {
-        min-height: 80vh;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        padding: 30px;
-    }
-
-    .welcome-card {
-        background: #ffffff;
-        width: 100%;
-        max-width: 600px;
-        padding: 40px 35px;
+    .app-card {
         border-radius: 18px;
-        border: 1px solid rgba(0,0,0,0.05);
-        box-shadow: 0 8px 20px rgba(0,0,0,0.06);
-        text-align: center;
-        animation: fadeIn 0.5s ease;
+        background: #ffffff;
+        border: 1px solid rgba(15, 23, 42, 0.08);
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
     }
 
-    .welcome-title {
+    .app-title {
         font-weight: 700;
-        color: #111827;
-        margin-bottom: 10px;
-        font-size: 2rem;
+        font-size: 1.9rem;
     }
 
-    .welcome-subtext {
-        font-size: 1rem;
-        color: #6B7280;
-        margin-bottom: 30px;
+    .muted {
+        color: #64748b;
     }
 
-    .dashboard-btn {
-        padding: 14px;
-        border-radius: 12px;
-        font-size: 1.05rem;
-        font-weight: 600;
-        transition: 0.2s ease;
-    }
-
-    .dashboard-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 14px rgba(0,0,0,0.12);
-    }
-
-    .btn-primary {
-        background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
-        border: none !important;
-    }
-
-    .btn-secondary {
-        background: #E5E7EB !important;
-        color: #111827 !important;
-        border: none !important;
-    }
-
-    .btn-outline-danger {
+    .app-btn-primary {
+        background: linear-gradient(135deg, #10b981, #14b8a6) !important;
+        color: white !important;
         border-radius: 12px !important;
         font-weight: 600;
-        padding: 12px;
+        border: none !important;
     }
 
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
+    .app-btn-secondary {
+        background: #e2e8f0 !important;
+        color: #0f172a !important;
+        border-radius: 12px !important;
+        font-weight: 600;
+        border: none !important;
+    }
+
+    .app-table-container {
+        border-radius: 14px;
+        overflow: hidden;
+    }
+
+    .app-thead {
+        background: #0f172a !important;
+        color: white !important;
+    }
+
+    .badge-soft {
+        background: rgba(15, 118, 110, 0.12);
+        color: #0f766e;
+        padding: 4px 10px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .table td, .table th {
+        vertical-align: middle;
+    }
+
+    @media (max-width: 900px) {
+        .action-group {
+            flex-direction: column;
+            gap: 8px;
+        }
     }
 </style>
 
+<div class="container-fluid p-0 mt-5 pt-4">
 
-<div class="welcome-wrapper">
-    <div class="welcome-card">
-
-        <h1 class="welcome-title">👋 Welcome, {{ current_user.username }}</h1>
-        <p class="welcome-subtext">Quick Access</p>
-
-        <div class="d-grid gap-3">
-
-            <a href="{{ url_for('stocktake', stocktake_type='daily') }}"
-               class="btn btn-primary dashboard-btn">
-                🗓️ Daily Stocktake
-            </a>
-
-            <a href="{{ url_for('stocktake', stocktake_type='weekly') }}"
-               class="btn btn-primary dashboard-btn">
-                📊 Weekly Stocktake
-            </a>
-
-            <a href="{{ url_for('stock_in') }}"
-               class="btn btn-primary dashboard-btn">
-                📦 Stock In / Current Stock
-            </a>
-
-            <a href="{{ url_for('past_daily_stocktakes') }}"
-               class="btn btn-secondary dashboard-btn">
-                📜 Past Daily Stocktakes
-            </a>
-
-            <a href="{{ url_for('past_weekly_stocktakes') }}"
-               class="btn btn-secondary dashboard-btn">
-                📜 Past Weekly Stocktakes
-            </a>
-
-            <a href="{{ url_for('logout') }}"
-               class="btn btn-outline-danger dashboard-btn">
-                🚪 Log Out
-            </a>
-
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 px-3">
+        <div>
+            <h2 class="app-title">Stocktake Items</h2>
+            <div class="muted">Daily and weekly items for {{ current_user.username }}</div>
         </div>
+        <div class="d-flex gap-2 action-group">
+            <a class="btn app-btn-primary" href="{{ url_for('stocktake', stocktake_type='daily') }}">Daily Stocktake</a>
+            <a class="btn app-btn-secondary" href="{{ url_for('stocktake', stocktake_type='weekly') }}">Weekly Stocktake</a>
+        </div>
+    </div>
+
+    <div class="card app-card mb-4 mx-3 p-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="fw-bold mb-0">Daily Stocktake Items</h5>
+            <span class="badge-soft">{{ daily_items|length }} items</span>
+        </div>
+
+        {% if daily_items %}
+        <div class="table-responsive app-table-container">
+            <table class="table table-hover mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Name</th>
+                        <th class="d-none d-md-table-cell">Unit</th>
+                        <th class="d-none d-md-table-cell">Supplier</th>
+                        <th class="d-none d-md-table-cell">Category</th>
+                        <th>Current Stock</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in daily_items %}
+                    <tr>
+                        <td class="fw-semibold">{{ item.name }}</td>
+                        <td class="d-none d-md-table-cell">{{ item.unit or "N/A" }}</td>
+                        <td class="d-none d-md-table-cell">{{ item.supplier or "N/A" }}</td>
+                        <td class="d-none d-md-table-cell">{{ item.category or "N/A" }}</td>
+                        <td>
+                            {% if item.quantity is not none %}
+                                {{ "%.1f"|format(item.quantity) }}
+                            {% else %}
+                                0.0
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+            <div class="muted">No daily stocktake items configured.</div>
+        {% endif %}
+    </div>
+
+    <div class="card app-card mb-5 mx-3 p-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <div>
+                <h5 class="fw-bold mb-1">Weekly Stocktake Items</h5>
+                <div class="muted" style="font-size: 0.85rem;">
+                    {% if weekly_customized %}
+                        Custom list for your store
+                    {% else %}
+                        Default weekly stocktake list
+                    {% endif %}
+                </div>
+            </div>
+            <span class="badge-soft">{{ weekly_items|length }} items</span>
+        </div>
+
+        {% if weekly_items %}
+        <div class="table-responsive app-table-container">
+            <table class="table table-hover mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Name</th>
+                        <th class="d-none d-md-table-cell">Unit</th>
+                        <th class="d-none d-md-table-cell">Supplier</th>
+                        <th class="d-none d-md-table-cell">Category</th>
+                        <th>Current Stock</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in weekly_items %}
+                    <tr>
+                        <td class="fw-semibold">{{ item.name }}</td>
+                        <td class="d-none d-md-table-cell">{{ item.unit or "N/A" }}</td>
+                        <td class="d-none d-md-table-cell">{{ item.supplier or "N/A" }}</td>
+                        <td class="d-none d-md-table-cell">{{ item.category or "N/A" }}</td>
+                        <td>
+                            {% if item.quantity is not none %}
+                                {{ "%.1f"|format(item.quantity) }}
+                            {% else %}
+                                0.0
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+            <div class="muted">No weekly stocktake items configured.</div>
+        {% endif %}
     </div>
 </div>
 
