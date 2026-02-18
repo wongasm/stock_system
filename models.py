@@ -128,6 +128,76 @@ class StoreWeeklyItem(db.Model):
         db.UniqueConstraint("store_id", "ingredient_id", name="uq_store_weekly_item"),
     )
 
+class SquareOrder(db.Model):
+    __tablename__ = "square_order"
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_order_id = db.Column(db.String(64), unique=True, nullable=False)
+    store_name = db.Column(db.String(50), nullable=False)
+    location_id = db.Column(db.String(64), nullable=True)
+    state = db.Column(db.String(32), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=True)
+    updated_at = db.Column(db.DateTime, nullable=True)
+    total_amount = db.Column(db.Numeric(12, 2), nullable=True)
+
+class SquareOrderLine(db.Model):
+    __tablename__ = "square_order_line"
+
+    id = db.Column(db.Integer, primary_key=True)
+    square_order_id = db.Column(db.String(64), nullable=False)
+    store_name = db.Column(db.String(50), nullable=False)
+    line_uid = db.Column(db.String(64), nullable=False)
+    source_line_uid = db.Column(db.String(64), nullable=True)
+    item_name = db.Column(db.String(255), nullable=True)
+    variation_name = db.Column(db.String(255), nullable=True)
+    catalog_object_id = db.Column(db.String(64), nullable=True)
+    item_type = db.Column(db.String(32), nullable=True)
+    quantity = db.Column(db.Numeric(12, 3), nullable=False, default=0)
+    is_return = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("square_order_id", "line_uid", name="uq_square_order_line"),
+    )
+
+class SquareItemRecipe(db.Model):
+    __tablename__ = "square_item_recipe"
+
+    id = db.Column(db.Integer, primary_key=True)
+    store_name = db.Column(db.String(50), nullable=False)
+    catalog_object_id = db.Column(db.String(64), nullable=False)
+    item_name = db.Column(db.String(255), nullable=True)
+    recipe_id = db.Column(db.Integer, db.ForeignKey("recipe.id"), nullable=False)
+    multiplier = db.Column(db.Numeric(12, 3), nullable=False, default=1)
+    active = db.Column(db.Boolean, default=True, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    recipe = db.relationship("Recipe", backref="square_mappings")
+
+    __table_args__ = (
+        db.UniqueConstraint("store_name", "catalog_object_id", name="uq_square_item_recipe"),
+    )
+
+class InventoryLedger(db.Model):
+    __tablename__ = "inventory_ledger"
+
+    id = db.Column(db.Integer, primary_key=True)
+    store_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    ingredient_id = db.Column(db.Integer, db.ForeignKey("ingredient.id"), nullable=False)
+    qty_delta = db.Column(db.Numeric(12, 3), nullable=False)
+    reason = db.Column(db.String(32), nullable=False)
+    source_type = db.Column(db.String(32), nullable=True)
+    source_id = db.Column(db.String(64), nullable=True)
+    occurred_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    store = db.relationship("User", backref="inventory_ledger")
+    ingredient = db.relationship("Ingredient", backref="inventory_ledger")
+
+    __table_args__ = (
+        db.UniqueConstraint("source_type", "source_id", "ingredient_id", name="uq_ledger_source"),
+    )
+
 class MonthlyStocktake(db.Model):
     __tablename__ = "monthly_stocktake"
 

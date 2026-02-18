@@ -1,0 +1,99 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Square Sync</h2>
+            <div class="small-text">Import Square orders and generate inventory usage.</div>
+        </div>
+    </div>
+
+    <div class="card app-card mb-4 mx-3 p-3">
+        <form method="POST" action="{{ url_for('square_sync') }}" class="row g-3 align-items-end">
+            <div class="col-md-4 col-12">
+                <label class="form-label small-text fw-semibold">Store</label>
+                <select name="store_name" class="form-select" required>
+                    {% for store in stores %}
+                        <option value="{{ store.username }}" {% if store.username == selected_store %}selected{% endif %}>
+                            {{ store.username }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 col-6">
+                <label class="form-label small-text fw-semibold">Start Date</label>
+                <input type="date" name="start_date" class="form-control" value="{{ start_date }}" required>
+            </div>
+            <div class="col-md-3 col-6">
+                <label class="form-label small-text fw-semibold">End Date</label>
+                <input type="date" name="end_date" class="form-control" value="{{ end_date }}" required>
+            </div>
+            <div class="col-md-2 col-12">
+                <button type="submit" class="btn app-btn-primary w-100">Sync</button>
+            </div>
+        </form>
+    </div>
+
+    {% if result %}
+    <div class="card app-card mx-3 mb-5 p-4">
+        <h5 class="fw-bold mb-3">Sync Summary</h5>
+        <div class="row g-3">
+            <div class="col-md-3 col-6">
+                <div class="small-text">Orders Fetched</div>
+                <div class="fw-bold fs-4">{{ result.orders_fetched }}</div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="small-text">Orders Inserted</div>
+                <div class="fw-bold fs-4">{{ result.orders_inserted }}</div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="small-text">Lines Inserted</div>
+                <div class="fw-bold fs-4">{{ result.lines_inserted }}</div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="small-text">Ledger Entries</div>
+                <div class="fw-bold fs-4">{{ result.ledger_entries }}</div>
+            </div>
+        </div>
+
+        {% if result.unmapped_items %}
+        <div class="mt-4">
+            <div class="fw-semibold">Unmapped Items (catalog_object_id)</div>
+            <ul class="small-text mt-2">
+                {% for item in result.unmapped_items %}
+                    <li>{{ item }}</li>
+                {% endfor %}
+            </ul>
+            <a class="btn app-btn-secondary mt-2" href="{{ url_for('square_mappings', store_name=selected_store) }}">Map Items</a>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.app-card {
+    border-radius: 18px;
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+}
+.app-btn-primary {
+    background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
+    color: #fff !important;
+    border-radius: 12px !important;
+    font-weight: 600;
+}
+.app-btn-secondary {
+    background: #EEF1F5 !important;
+    color: #374151 !important;
+    border-radius: 12px !important;
+}
+.small-text {
+    font-size: 0.85rem;
+    color: #6B7280;
+}
+</style>
+
+{% endblock %}

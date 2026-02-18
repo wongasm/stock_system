@@ -1,4 +1,4 @@
-from models import db, Ingredient, Supplier, Category, StockOutRecord, Recipe, RecipeIngredient, User, Stocktake, StoreThreshold, StoreWeeklyItem, MonthlyStocktake, Invoice, WeeklyStocktake, StockInRecord, StoreInventory
+from models import db, Ingredient, Supplier, Category, StockOutRecord, Recipe, RecipeIngredient, User, Stocktake, StoreThreshold, StoreWeeklyItem, MonthlyStocktake, Invoice, WeeklyStocktake, StockInRecord, StoreInventory, SquareOrder, SquareOrderLine, SquareItemRecipe, InventoryLedger
 from datetime import datetime, timedelta, timezone
 from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, send_file, session
 import json
@@ -70,6 +70,196 @@ login_manager.login_view = 'login'
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+def parse_square_datetime(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+def apply_square_mappings(store_name, start_dt=None, end_dt=None):
+    query = SquareOrderLine.query.filter_by(store_name=store_name)
+    if start_dt:
+        query = query.filter(SquareOrderLine.created_at >= start_dt)
+    if end_dt:
+        query = query.filter(SquareOrderLine.created_at <= end_dt)
+
+    lines = query.all()
+    created = 0
+    unmapped = set()
+
+    store_user = User.query.filter_by(username=store_name, role="user").first()
+    if not store_user:
+        return {"created": 0, "unmapped": []}
+
+    for line in lines:
+        if not line.catalog_object_id:
+            continue
+
+        source_id = f"{store_name}:{line.line_uid}"
+        mapping = SquareItemRecipe.query.filter_by(
+            store_name=store_name,
+            catalog_object_id=line.catalog_object_id,
+            active=True
+        ).first()
+        if not mapping:
+            unmapped.add(line.catalog_object_id)
+            continue
+
+        recipe = mapping.recipe
+        if not recipe:
+            unmapped.add(line.catalog_object_id)
+            continue
+
+        quantity = Decimal(str(line.quantity or 0))
+        if quantity == 0:
+            continue
+
+        multiplier = Decimal(str(mapping.multiplier or 1))
+        sign = Decimal("1") if line.is_return else Decimal("-1")
+
+        ingredients = RecipeIngredient.query.filter_by(recipe_id=recipe.id).all()
+        for ri in ingredients:
+            ingredient = Ingredient.query.get(ri.ingredient_id)
+            if not ingredient:
+                continue
+
+            grams_per_unit = Decimal(str(ingredient.grams_per_unit or 0))
+            if grams_per_unit == 0:
+                continue
+
+            existing = InventoryLedger.query.filter_by(
+                source_type="SQUARE_LINE",
+                source_id=source_id,
+                ingredient_id=ingredient.id
+            ).first()
+            if existing:
+                continue
+
+            grams_needed = Decimal(str(ri.grams_used)) * quantity * multiplier
+            units_needed = grams_needed / grams_per_unit
+            qty_delta = sign * units_needed
+
+            ledger = InventoryLedger(
+                store_id=store_user.id,
+                ingredient_id=ingredient.id,
+                qty_delta=qty_delta,
+                reason="REFUND" if line.is_return else "SALE",
+                source_type="SQUARE_LINE",
+                source_id=source_id,
+                occurred_at=line.created_at or datetime.utcnow()
+            )
+            db.session.add(ledger)
+            created += 1
+
+    return {"created": created, "unmapped": sorted(list(unmapped))}
+
+def sync_square_orders(store_name, start_utc, end_utc):
+    orders = fetch_sales_for_store(store_name, start_date=start_utc, end_date=end_utc)
+    orders_inserted = 0
+    lines_inserted = 0
+    total_orders = len(orders)
+    unmapped = set()
+
+    for order in orders:
+        square_order_id = order.get("id")
+        if not square_order_id:
+            continue
+
+        existing_order = SquareOrder.query.filter_by(square_order_id=square_order_id).first()
+        if not existing_order:
+            order_created = parse_square_datetime(order.get("created_at"))
+            order_updated = parse_square_datetime(order.get("updated_at"))
+            total_amount = Decimal(str(order.get("total_money", {}).get("amount", 0))) / Decimal("100")
+
+            new_order = SquareOrder(
+                square_order_id=square_order_id,
+                store_name=store_name,
+                location_id=order.get("location_id"),
+                state=order.get("state"),
+                created_at=order_created,
+                updated_at=order_updated,
+                total_amount=total_amount
+            )
+            db.session.add(new_order)
+            orders_inserted += 1
+
+        order_created_at = parse_square_datetime(order.get("created_at"))
+
+        # Regular line items (sales)
+        for line in order.get("line_items", []) or []:
+            line_uid = line.get("uid")
+            if not line_uid:
+                continue
+
+            exists = SquareOrderLine.query.filter_by(
+                square_order_id=square_order_id,
+                line_uid=line_uid
+            ).first()
+            if exists:
+                continue
+
+            qty = Decimal(str(line.get("quantity", "0") or "0"))
+            new_line = SquareOrderLine(
+                square_order_id=square_order_id,
+                store_name=store_name,
+                line_uid=line_uid,
+                item_name=(line.get("name") or "").strip() or None,
+                variation_name=(line.get("variation_name") or "").strip() or None,
+                catalog_object_id=line.get("catalog_object_id"),
+                item_type=line.get("item_type"),
+                quantity=qty,
+                is_return=False,
+                created_at=order_created_at
+            )
+            db.session.add(new_line)
+            lines_inserted += 1
+
+        # Return line items (refunds)
+        for ret in order.get("returns", []) or []:
+            for rline in ret.get("return_line_items", []) or []:
+                line_uid = rline.get("uid")
+                if not line_uid:
+                    continue
+
+                exists = SquareOrderLine.query.filter_by(
+                    square_order_id=square_order_id,
+                    line_uid=line_uid
+                ).first()
+                if exists:
+                    continue
+
+                qty = Decimal(str(rline.get("quantity", "0") or "0"))
+                new_line = SquareOrderLine(
+                    square_order_id=square_order_id,
+                    store_name=store_name,
+                    line_uid=line_uid,
+                    source_line_uid=rline.get("source_line_item_uid"),
+                    item_name=(rline.get("name") or "").strip() or None,
+                    variation_name=(rline.get("variation_name") or "").strip() or None,
+                    catalog_object_id=rline.get("catalog_object_id"),
+                    item_type=rline.get("item_type"),
+                    quantity=qty,
+                    is_return=True,
+                    created_at=order_created_at
+                )
+                db.session.add(new_line)
+                lines_inserted += 1
+
+    db.session.commit()
+
+    apply_result = apply_square_mappings(store_name, start_dt=None, end_dt=None)
+    unmapped.update(apply_result["unmapped"])
+
+    return {
+        "orders_fetched": total_orders,
+        "orders_inserted": orders_inserted,
+        "lines_inserted": lines_inserted,
+        "ledger_entries": apply_result["created"],
+        "unmapped_items": sorted(list(unmapped))
+    }
 
 # Create tables
 with app.app_context():
@@ -395,6 +585,18 @@ def stock_in():
             )
 
             db.session.add(record)
+            if is_store_user:
+                db.session.flush()
+                ledger = InventoryLedger(
+                    store_id=current_user.id,
+                    ingredient_id=ingredient.id,
+                    qty_delta=stock_added,
+                    reason="STOCK_IN",
+                    source_type="STOCK_IN",
+                    source_id=f"stockin:{record.id}",
+                    occurred_at=record.date
+                )
+                db.session.add(ledger)
             db.session.commit()
 
             return jsonify({"success": True, "new_quantity": float(new_quantity)})
@@ -2851,6 +3053,130 @@ def sales_report():
         store_revenue=store_revenue,
         store_filter=store_filter,
         stores=stores  # for dropdown options
+    )
+
+@app.route("/admin/square_sync", methods=["GET", "POST"])
+@login_required
+def square_sync():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    stores = User.query.filter_by(role="user").all()
+    selected_store = request.form.get("store_name") or request.args.get("store_name")
+    if not selected_store and stores:
+        selected_store = stores[0].username
+
+    today = datetime.utcnow().date()
+    start_date = request.form.get("start_date") or request.args.get("start_date") or today.strftime("%Y-%m-%d")
+    end_date = request.form.get("end_date") or request.args.get("end_date") or today.strftime("%Y-%m-%d")
+
+    result = None
+    if request.method == "POST":
+        start_utc = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
+        end_utc = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
+
+        result = sync_square_orders(selected_store, start_utc, end_utc)
+        flash("Square sync completed.", "success")
+
+    return render_template(
+        "square_sync.html",
+        stores=stores,
+        selected_store=selected_store,
+        start_date=start_date,
+        end_date=end_date,
+        result=result
+    )
+
+@app.route("/admin/square_mappings", methods=["GET", "POST"])
+@login_required
+def square_mappings():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    stores = User.query.filter_by(role="user").all()
+    selected_store = request.args.get("store_name")
+    if not selected_store and stores:
+        selected_store = stores[0].username
+
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+        store_name = request.form.get("store_name") or selected_store
+
+        if action == "apply":
+            applied = apply_square_mappings(store_name)
+            flash(f"Applied mappings. Ledger entries: {applied['created']}.", "success")
+            return redirect(url_for("square_mappings", store_name=store_name))
+
+        catalog_object_id = request.form.get("catalog_object_id")
+        recipe_id = request.form.get("recipe_id")
+        multiplier_raw = request.form.get("multiplier", "1")
+
+        if catalog_object_id and recipe_id:
+            try:
+                multiplier = Decimal(str(multiplier_raw))
+            except (InvalidOperation, ValueError):
+                multiplier = Decimal("1")
+
+            item_name = request.form.get("item_name")
+            mapping = SquareItemRecipe.query.filter_by(
+                store_name=store_name,
+                catalog_object_id=catalog_object_id
+            ).first()
+
+            if not mapping:
+                mapping = SquareItemRecipe(
+                    store_name=store_name,
+                    catalog_object_id=catalog_object_id
+                )
+                db.session.add(mapping)
+
+            mapping.recipe_id = int(recipe_id)
+            mapping.item_name = item_name
+            mapping.multiplier = multiplier
+            mapping.active = True
+            db.session.commit()
+            flash("Mapping saved.", "success")
+            return redirect(url_for("square_mappings", store_name=store_name))
+
+        flash("Missing catalog object ID or recipe.", "danger")
+
+    recipes = []
+    for recipe in Recipe.query.all():
+        output = Ingredient.query.get(recipe.output_item_id)
+        if output:
+            recipes.append({"id": recipe.id, "name": output.name})
+
+    line_items = []
+    if selected_store:
+        raw_items = db.session.query(
+            SquareOrderLine.catalog_object_id,
+            func.max(SquareOrderLine.item_name).label("item_name")
+        ).filter(
+            SquareOrderLine.store_name == selected_store,
+            SquareOrderLine.catalog_object_id.isnot(None)
+        ).group_by(SquareOrderLine.catalog_object_id).all()
+
+        mappings = SquareItemRecipe.query.filter_by(store_name=selected_store).all()
+        mapping_map = {m.catalog_object_id: m for m in mappings}
+
+        for row in raw_items:
+            mapping = mapping_map.get(row.catalog_object_id)
+            line_items.append({
+                "catalog_object_id": row.catalog_object_id,
+                "item_name": row.item_name,
+                "recipe_id": mapping.recipe_id if mapping else None,
+                "multiplier": float(mapping.multiplier) if mapping and mapping.multiplier is not None else 1.0,
+                "mapped": bool(mapping)
+            })
+
+    return render_template(
+        "square_mappings.html",
+        stores=stores,
+        selected_store=selected_store,
+        line_items=line_items,
+        recipes=recipes
     )
 
 @app.route("/freezer_pack_needs", methods=["GET"])

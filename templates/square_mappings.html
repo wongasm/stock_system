@@ -1,0 +1,123 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Square Item Mappings</h2>
+            <div class="small-text">Map Square items (variation IDs) to recipes.</div>
+        </div>
+        <form method="POST" class="d-flex align-items-center">
+            <input type="hidden" name="store_name" value="{{ selected_store }}">
+            <input type="hidden" name="action" value="apply">
+            <button type="submit" class="btn app-btn-secondary">Apply Mappings</button>
+        </form>
+    </div>
+
+    <div class="card app-card mb-4 mx-3 p-3">
+        <form method="GET" action="{{ url_for('square_mappings') }}" class="row g-3 align-items-end">
+            <div class="col-md-4 col-12">
+                <label class="form-label small-text fw-semibold">Store</label>
+                <select name="store_name" class="form-select" onchange="this.form.submit()">
+                    {% for store in stores %}
+                        <option value="{{ store.username }}" {% if store.username == selected_store %}selected{% endif %}>
+                            {{ store.username }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </form>
+    </div>
+
+    <div class="card app-card mx-3 mb-5 p-3">
+        <div class="table-responsive app-table-container">
+            <table class="table table-hover mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Catalog Object ID</th>
+                        <th>Item Name</th>
+                        <th>Recipe</th>
+                        <th>Multiplier</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in line_items %}
+                    <tr>
+                        <td class="text-monospace">{{ item.catalog_object_id }}</td>
+                        <td>{{ item.item_name or "—" }}</td>
+                        <td>
+                            <form method="POST" class="d-flex gap-2 align-items-center">
+                                <input type="hidden" name="store_name" value="{{ selected_store }}">
+                                <input type="hidden" name="catalog_object_id" value="{{ item.catalog_object_id }}">
+                                <input type="hidden" name="item_name" value="{{ item.item_name }}">
+                                <select name="recipe_id" class="form-select form-select-sm" required>
+                                    <option value="">Select Recipe</option>
+                                    {% for recipe in recipes %}
+                                        <option value="{{ recipe.id }}" {% if item.recipe_id == recipe.id %}selected{% endif %}>
+                                            {{ recipe.name }}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                        </td>
+                        <td style="width:140px;">
+                                <input type="number" step="0.01" min="0" name="multiplier" value="{{ item.multiplier }}" class="form-control form-control-sm">
+                        </td>
+                        <td>
+                                {% if item.mapped %}
+                                    <span class="badge bg-success">Mapped</span>
+                                {% else %}
+                                    <span class="badge bg-warning text-dark">Unmapped</span>
+                                {% endif %}
+                        </td>
+                        <td>
+                                <button type="submit" class="btn btn-sm app-btn-primary">Save</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not line_items %}
+                    <tr>
+                        <td colspan="6" class="text-center small-text">No Square items found. Run a Square sync first.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+.app-card {
+    border-radius: 18px;
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+}
+.app-btn-primary {
+    background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
+    color: #fff !important;
+    border-radius: 12px !important;
+    font-weight: 600;
+}
+.app-btn-secondary {
+    background: #EEF1F5 !important;
+    color: #374151 !important;
+    border-radius: 12px !important;
+}
+.app-thead {
+    background: #111827 !important;
+    color: #fff !important;
+}
+.small-text {
+    font-size: 0.85rem;
+    color: #6B7280;
+}
+.text-monospace {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    font-size: 0.85rem;
+}
+</style>
+
+{% endblock %}
