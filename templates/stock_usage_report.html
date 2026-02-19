@@ -1,0 +1,112 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+    <div class="d-flex justify-content-between align-items-start mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Stock Usage Report</h2>
+            <div class="small-text">
+                Usage is calculated from Square sales recipes. Refunds reduce usage.
+            </div>
+        </div>
+        <div class="text-end small-text">
+            {{ start_date }} → {{ end_date }}
+        </div>
+    </div>
+
+    <div class="card app-card mb-4 mx-3 p-3">
+        <form method="GET" action="{{ url_for('stock_usage_report') }}" class="row g-3 align-items-end">
+            <div class="col-md-4 col-12">
+                <label class="form-label small-text fw-semibold">Store</label>
+                <select name="store" class="form-select">
+                    <option value="all" {% if selected_store == "all" %}selected{% endif %}>All Stores</option>
+                    {% for store in stores %}
+                        <option value="{{ store.id }}" {% if store.id|string == selected_store %}selected{% endif %}>
+                            {{ store.username }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 col-6">
+                <label class="form-label small-text fw-semibold">Start Date</label>
+                <input type="date" name="start_date" class="form-control" value="{{ start_date }}">
+            </div>
+            <div class="col-md-3 col-6">
+                <label class="form-label small-text fw-semibold">End Date</label>
+                <input type="date" name="end_date" class="form-control" value="{{ end_date }}">
+            </div>
+            <div class="col-md-2 col-12">
+                <button class="btn btn-primary w-100">Apply</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card app-card mx-3 mb-5 p-3">
+        <div class="table-responsive app-table-container">
+            <table class="table table-hover mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        {% if selected_store == "all" %}
+                        <th>Store</th>
+                        {% endif %}
+                        <th>Ingredient</th>
+                        <th>Supplier</th>
+                        <th class="text-end">Units Used</th>
+                        <th class="text-end">Unit</th>
+                        <th class="text-end">Grams Used</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        {% if selected_store == "all" %}
+                        <td class="fw-semibold">{{ row.store_name }}</td>
+                        {% endif %}
+                        <td>{{ row.ingredient_name }}</td>
+                        <td>{{ row.supplier or "—" }}</td>
+                        <td class="text-end mono">{{ "%.2f"|format(row.units_used) }}</td>
+                        <td class="text-end">{{ row.unit or "—" }}</td>
+                        <td class="text-end mono">
+                            {% if row.grams_used is not none %}
+                                {{ "%.0f"|format(row.grams_used) }} g
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not rows %}
+                    {% set col_count = 6 if selected_store == "all" else 5 %}
+                    <tr>
+                        <td colspan="{{ col_count }}" class="text-center small-text">
+                            No usage data for this range. Run Square Sync first.
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+.app-card {
+    border-radius: 18px;
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+}
+.app-thead {
+    background: #111827 !important;
+    color: #fff !important;
+}
+.small-text {
+    font-size: 0.85rem;
+    color: #6B7280;
+}
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+</style>
+
+{% endblock %}

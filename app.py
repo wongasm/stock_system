@@ -1457,7 +1457,7 @@ def variance_report():
         flash("Access denied.", "danger")
         return redirect(url_for("index"))
 
-    stores = User.query.filter_by(role="user").all()
+    stores = User.query.filter_by(role="user").order_by(User.username.asc()).all()
     selected_store = request.args.get("store")
     if not selected_store and stores:
         selected_store = str(stores[0].id)
@@ -1559,6 +1559,84 @@ def variance_report():
         rows=report_rows,
         weekly_customized=weekly_customized,
         total_variance_value=total_variance_value
+    )
+
+@app.route("/admin/stock_usage", methods=["GET"])
+@login_required
+def stock_usage_report():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    stores = User.query.filter_by(role="user").all()
+    selected_store = request.args.get("store", "all")
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+
+    if not start_date or not end_date:
+        today = datetime.utcnow().date()
+        start_date = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+        end_date = today.strftime("%Y-%m-%d")
+
+    try:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d") + timedelta(days=1) - timedelta(seconds=1)
+    except ValueError:
+        flash("Invalid date range.", "danger")
+        return redirect(url_for("stock_usage_report"))
+
+    query = db.session.query(
+        User.username.label("store_name"),
+        Ingredient.id.label("ingredient_id"),
+        Ingredient.name.label("ingredient_name"),
+        Ingredient.unit,
+        Ingredient.grams_per_unit,
+        Ingredient.supplier,
+        func.coalesce(func.sum(InventoryLedger.qty_delta), 0).label("qty_delta")
+    ).join(User, InventoryLedger.store_id == User.id) \
+     .join(Ingredient, InventoryLedger.ingredient_id == Ingredient.id) \
+     .filter(InventoryLedger.reason.in_(["SALE", "REFUND"])) \
+     .filter(InventoryLedger.occurred_at >= start_dt) \
+     .filter(InventoryLedger.occurred_at <= end_dt)
+
+    if selected_store != "all":
+        query = query.filter(User.id == selected_store)
+
+    query = query.group_by(User.username, Ingredient.id, Ingredient.name, Ingredient.unit, Ingredient.grams_per_unit, Ingredient.supplier)
+    raw_rows = query.order_by(User.username.asc(), Ingredient.name.asc()).all()
+
+    rows = []
+    totals_by_store = {}
+
+    for row in raw_rows:
+        qty_delta = Decimal(str(row.qty_delta or 0))
+        units_used = -qty_delta  # sales are negative, refunds positive
+        if units_used <= 0:
+            continue
+
+        grams_per_unit = Decimal(str(row.grams_per_unit or 0))
+        grams_used = units_used * grams_per_unit if grams_per_unit else None
+
+        rows.append({
+            "store_name": row.store_name,
+            "ingredient_name": row.ingredient_name,
+            "unit": row.unit,
+            "supplier": row.supplier,
+            "units_used": units_used,
+            "grams_used": grams_used
+        })
+
+        totals_by_store.setdefault(row.store_name, Decimal("0"))
+        totals_by_store[row.store_name] += units_used
+
+    return render_template(
+        "stock_usage_report.html",
+        stores=stores,
+        selected_store=selected_store,
+        start_date=start_date,
+        end_date=end_date,
+        rows=rows,
+        totals_by_store=totals_by_store
     )
 
 
