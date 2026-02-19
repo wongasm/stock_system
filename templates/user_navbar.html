@@ -15,32 +15,10 @@
     <!-- Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 
+    <!-- Global App Styles -->
+    <link href="{{ url_for('static', filename='app.css') }}" rel="stylesheet">
+
     <style>
-        :root {
-            --page-bg: #f5f4ef;
-            --page-ink: #0f172a;
-            --page-ink-soft: #334155;
-            --nav-bg: #0b1220;
-            --nav-panel: #111827;
-            --nav-border: rgba(148, 163, 184, 0.16);
-            --nav-text: #e2e8f0;
-            --nav-muted: #94a3b8;
-            --nav-accent: #10b981;
-            --nav-accent-2: #f59e0b;
-            --shadow-lg: 0 18px 40px rgba(15, 23, 42, 0.25);
-        }
-
-        body {
-            margin: 0;
-            background:
-                radial-gradient(1200px 800px at 90% -10%, rgba(16, 185, 129, 0.15), transparent 60%),
-                radial-gradient(900px 700px at -10% 20%, rgba(14, 165, 233, 0.10), transparent 55%),
-                var(--page-bg);
-            color: var(--page-ink);
-            font-family: "Work Sans", "Segoe UI", sans-serif;
-            overflow-x: hidden;
-        }
-
         /* ----------------------------------------------
            SIDEBAR BASE
         ---------------------------------------------- */
@@ -229,6 +207,7 @@
 
     <details class="nav-group" open>
         <summary>Stocktake</summary>
+        <a class="nav-link-custom" href="{{ url_for('blank') }}">Home</a>
         <a class="nav-link-custom" href="{{ url_for('stocktake', stocktake_type='daily') }}">Daily Stocktake</a>
         <a class="nav-link-custom" href="{{ url_for('stocktake', stocktake_type='weekly') }}">Weekly Stocktake</a>
     </details>
