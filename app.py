@@ -172,6 +172,18 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
     return {"created": created, "unmapped": sorted(list(unmapped))}
 
 def sync_square_orders(store_name, start_utc, end_utc):
+    lock_name = f"square_sync_{store_name}"
+    lock_ok = db.session.execute(text("SELECT GET_LOCK(:name, 0)"), {"name": lock_name}).scalar()
+    if lock_ok != 1:
+        return {
+            "orders_fetched": 0,
+            "orders_inserted": 0,
+            "lines_inserted": 0,
+            "ledger_entries": 0,
+            "unmapped_items": [],
+            "skipped": True
+        }
+
     orders = fetch_sales_for_store(store_name, start_date=start_utc, end_date=end_utc)
     orders_inserted = 0
     lines_inserted = 0
@@ -263,18 +275,22 @@ def sync_square_orders(store_name, start_utc, end_utc):
                 db.session.add(new_line)
                 lines_inserted += 1
 
-    db.session.commit()
+    try:
+        db.session.commit()
 
-    apply_result = apply_square_mappings(store_name, start_dt=None, end_dt=None)
-    unmapped.update(apply_result["unmapped"])
+        apply_result = apply_square_mappings(store_name, start_dt=None, end_dt=None)
+        unmapped.update(apply_result["unmapped"])
 
-    return {
-        "orders_fetched": total_orders,
-        "orders_inserted": orders_inserted,
-        "lines_inserted": lines_inserted,
-        "ledger_entries": apply_result["created"],
-        "unmapped_items": sorted(list(unmapped))
-    }
+        return {
+            "orders_fetched": total_orders,
+            "orders_inserted": orders_inserted,
+            "lines_inserted": lines_inserted,
+            "ledger_entries": apply_result["created"],
+            "unmapped_items": sorted(list(unmapped)),
+            "skipped": False
+        }
+    finally:
+        db.session.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": lock_name})
 
 # Create tables
 with app.app_context():
@@ -1432,6 +1448,117 @@ def reporting_page():
         total_revenue_inc=total_revenue_inc,
 
         gp_margin=gp_margin
+    )
+
+@app.route("/admin/variance_report", methods=["GET"])
+@login_required
+def variance_report():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    stores = User.query.filter_by(role="user").all()
+    selected_store = request.args.get("store")
+    if not selected_store and stores:
+        selected_store = str(stores[0].id)
+
+    report_rows = []
+    total_variance_value = Decimal("0")
+    weekly_customized = False
+
+    if selected_store:
+        try:
+            store_id = int(selected_store)
+        except ValueError:
+            store_id = None
+
+        if store_id:
+            store_items = StoreWeeklyItem.query.filter_by(
+                store_id=store_id,
+                enabled=True
+            ).order_by(StoreWeeklyItem.order_position.asc()).all()
+
+            ingredient_ids = []
+            if store_items:
+                weekly_customized = True
+                ingredient_ids = [item.ingredient_id for item in store_items]
+            else:
+                ingredient_ids = [
+                    ingredient.id
+                    for ingredient in Ingredient.query.filter_by(weekly_stocktake=True)
+                    .order_by(Ingredient.weekly_order_position.asc())
+                    .all()
+                ]
+
+            ingredients = Ingredient.query.filter(Ingredient.id.in_(ingredient_ids)).all()
+            ingredient_map = {ingredient.id: ingredient for ingredient in ingredients}
+
+            for ingredient_id in ingredient_ids:
+                ingredient = ingredient_map.get(ingredient_id)
+                if not ingredient:
+                    continue
+                if ingredient.measurement_type == "binary":
+                    continue
+
+                latest_stocktake = Stocktake.query.filter_by(
+                    user_id=store_id,
+                    ingredient_id=ingredient.id,
+                    stocktake_type="weekly"
+                ).order_by(Stocktake.date_recorded.desc()).first()
+
+                baseline_qty = None
+                baseline_date = None
+                if latest_stocktake:
+                    baseline_date = latest_stocktake.date_recorded
+                    try:
+                        baseline_qty = Decimal(str(latest_stocktake.quantity_on_hand))
+                    except (InvalidOperation, ValueError):
+                        baseline_qty = None
+
+                ledger_sum = Decimal("0")
+                if baseline_qty is not None:
+                    ledger_sum = db.session.query(
+                        func.coalesce(func.sum(InventoryLedger.qty_delta), 0)
+                    ).filter(
+                        InventoryLedger.store_id == store_id,
+                        InventoryLedger.ingredient_id == ingredient.id,
+                        InventoryLedger.occurred_at >= baseline_date
+                    ).scalar() or Decimal("0")
+
+                store_inventory = StoreInventory.query.filter_by(
+                    store_id=store_id,
+                    ingredient_id=ingredient.id
+                ).first()
+
+                actual_qty = Decimal(str(store_inventory.quantity)) if store_inventory and store_inventory.quantity is not None else Decimal("0")
+
+                theoretical_qty = None
+                variance_qty = None
+                variance_value = None
+
+                if baseline_qty is not None:
+                    theoretical_qty = baseline_qty + ledger_sum
+                    variance_qty = actual_qty - theoretical_qty
+                    price = Decimal(str(ingredient.price_per_unit or 0))
+                    variance_value = variance_qty * price
+                    total_variance_value += variance_value
+
+                report_rows.append({
+                    "ingredient": ingredient.name,
+                    "actual_qty": actual_qty,
+                    "theoretical_qty": theoretical_qty,
+                    "variance_qty": variance_qty,
+                    "variance_value": variance_value,
+                    "baseline_date": baseline_date
+                })
+
+    return render_template(
+        "variance_report.html",
+        stores=stores,
+        selected_store=selected_store,
+        rows=report_rows,
+        weekly_customized=weekly_customized,
+        total_variance_value=total_variance_value
     )
 
 
@@ -3202,7 +3329,10 @@ def square_sync():
         end_utc = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
 
         result = sync_square_orders(selected_store, start_utc, end_utc)
-        flash("Square sync completed.", "success")
+        if result.get("skipped"):
+            flash("Square sync already running for this store. Try again shortly.", "warning")
+        else:
+            flash("Square sync completed.", "success")
 
     return render_template(
         "square_sync.html",

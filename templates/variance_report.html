@@ -1,0 +1,118 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Weekly Variance Report</h2>
+            <div class="small-text">Compare theoretical stock vs actual store stock after weekly stocktake.</div>
+        </div>
+        <div class="text-end">
+            <div class="small-text">Total Variance Value</div>
+            <div class="fw-bold fs-4">
+                ${{ "%.2f"|format(total_variance_value) }}
+            </div>
+        </div>
+    </div>
+
+    <div class="card app-card mb-4 mx-3 p-3">
+        <form method="GET" action="{{ url_for('variance_report') }}" class="row g-3 align-items-end">
+            <div class="col-md-4 col-12">
+                <label class="form-label small-text fw-semibold">Store</label>
+                <select name="store" class="form-select" onchange="this.form.submit()">
+                    {% for store in stores %}
+                        <option value="{{ store.id }}" {% if store.id|string == selected_store %}selected{% endif %}>
+                            {{ store.username }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-8 col-12">
+                <div class="small-text text-muted mt-2">
+                    {% if weekly_customized %}
+                        Custom weekly list applied.
+                    {% else %}
+                        Default weekly list applied.
+                    {% endif %}
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <div class="card app-card mx-3 mb-5 p-3">
+        <div class="table-responsive app-table-container">
+            <table class="table table-hover mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Ingredient</th>
+                        <th>Actual Stock</th>
+                        <th>Theoretical Stock</th>
+                        <th>Variance</th>
+                        <th>Variance Value</th>
+                        <th>Baseline</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td class="fw-semibold">{{ row.ingredient }}</td>
+                        <td>{{ "%.2f"|format(row.actual_qty) }}</td>
+                        <td>
+                            {% if row.theoretical_qty is not none %}
+                                {{ "%.2f"|format(row.theoretical_qty) }}
+                            {% else %}
+                                <span class="text-muted">No baseline</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.variance_qty is not none %}
+                                {{ "%.2f"|format(row.variance_qty) }}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.variance_value is not none %}
+                                ${{ "%.2f"|format(row.variance_value) }}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.baseline_date %}
+                                {{ row.baseline_date.strftime('%Y-%m-%d') }}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not rows %}
+                    <tr>
+                        <td colspan="6" class="text-center small-text">No variance data yet.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+.app-card {
+    border-radius: 18px;
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.05);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+}
+.app-thead {
+    background: #111827 !important;
+    color: #fff !important;
+}
+.small-text {
+    font-size: 0.85rem;
+    color: #6B7280;
+}
+</style>
+
+{% endblock %}
