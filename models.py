@@ -145,7 +145,7 @@ class SalesRecipeIngredient(db.Model):
     grams_used = db.Column(db.Numeric(12, 3), nullable=False)
 
     sales_recipe = db.relationship("SalesRecipe", backref="ingredients")
-    ingredient = db.relationship("Ingredient")
+    ingredient = db.relationship("Ingredient", overlaps="ingredient_stock,monthly_stocktakes")
 
 class SquareItemSalesRecipe(db.Model):
     __tablename__ = "square_item_sales_recipe"

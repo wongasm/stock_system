@@ -18,10 +18,15 @@ def main():
 
     with app.app_context():
         stores = User.query.filter_by(role="user").all()
+        summary = []
         for store in stores:
-            result = sync_square_orders(store.username, start_utc, end_utc)
+            result = sync_square_orders(store.username, start_utc, end_utc, verbose=False)
             status = "SKIPPED" if result.get("skipped") else "OK"
-            print(f"{store.username}: {status} | orders {result['orders_inserted']} | lines {result['lines_inserted']} | ledger {result['ledger_entries']}")
+            summary.append(
+                f"{store.username}:{status} orders={result['orders_inserted']} lines={result['lines_inserted']} ledger={result['ledger_entries']}"
+            )
+
+        print(" | ".join(summary))
 
 
 if __name__ == "__main__":

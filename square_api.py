@@ -5,16 +5,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def fetch_sales_for_store(store_name, start_date=None, end_date=None):
+def fetch_sales_for_store(store_name, start_date=None, end_date=None, verbose=True):
     # Convert store name to ENV key format (e.g., "Glen Waverley" → "GLEN_WAVERLEY")
     env_key = store_name.upper().replace(" ", "_")
 
-    print(f"🧪 ENV key: {env_key}")
-
     access_token = os.getenv(f"{env_key}_ACCESS_TOKEN")
     location_id = os.getenv(f"{env_key}_LOCATION_ID")
-    print(f"🔑 Token: {access_token}")
-    print(f"📍 Location: {location_id}")
+    if verbose:
+        print(f"🧪 ENV key: {env_key}")
+        print(f"📍 Location: {location_id}")
 
     if not access_token or not location_id:
         print(f"⚠️ Missing access token or location ID for {store_name}")
@@ -35,7 +34,8 @@ def fetch_sales_for_store(store_name, start_date=None, end_date=None):
         end_dt = datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999).astimezone(timezone.utc)
         end_date = end_dt.isoformat().replace('+00:00', 'Z')
 
-    print(f"📅 Fetching orders for {store_name} from {start_date} to {end_date}")
+    if verbose:
+        print(f"📅 Fetching orders for {store_name} from {start_date} to {end_date}")
 
     try:
         result = client.orders.search_orders(
@@ -63,12 +63,15 @@ def fetch_sales_for_store(store_name, start_date=None, end_date=None):
 
         if result.is_success():
             orders = result.body.get("orders", [])
-            print(f"✅ {len(orders)} orders fetched.")
+            if verbose:
+                print(f"✅ {len(orders)} orders fetched.")
             return orders
         else:
-            print(f"❌ Error fetching orders for {store_name}:", result.errors)
+            if verbose:
+                print(f"❌ Error fetching orders for {store_name}:", result.errors)
             return []
 
     except Exception as e:
-        print(f"❌ Exception fetching sales for {store_name}:", e)
+        if verbose:
+            print(f"❌ Exception fetching sales for {store_name}:", e)
         return []

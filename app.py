@@ -171,7 +171,7 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
 
     return {"created": created, "unmapped": sorted(list(unmapped))}
 
-def sync_square_orders(store_name, start_utc, end_utc):
+def sync_square_orders(store_name, start_utc, end_utc, verbose=False):
     lock_name = f"square_sync_{store_name}"
     lock_ok = db.session.execute(text("SELECT GET_LOCK(:name, 0)"), {"name": lock_name}).scalar()
     if lock_ok != 1:
@@ -184,7 +184,7 @@ def sync_square_orders(store_name, start_utc, end_utc):
             "skipped": True
         }
 
-    orders = fetch_sales_for_store(store_name, start_date=start_utc, end_date=end_utc)
+    orders = fetch_sales_for_store(store_name, start_date=start_utc, end_date=end_utc, verbose=verbose)
     orders_inserted = 0
     lines_inserted = 0
     total_orders = len(orders)
