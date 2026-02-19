@@ -128,6 +128,43 @@ class StoreWeeklyItem(db.Model):
         db.UniqueConstraint("store_id", "ingredient_id", name="uq_store_weekly_item"),
     )
 
+class SalesRecipe(db.Model):
+    __tablename__ = "sales_recipe"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False, unique=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class SalesRecipeIngredient(db.Model):
+    __tablename__ = "sales_recipe_ingredient"
+
+    id = db.Column(db.Integer, primary_key=True)
+    sales_recipe_id = db.Column(db.Integer, db.ForeignKey("sales_recipe.id"), nullable=False)
+    ingredient_id = db.Column(db.Integer, db.ForeignKey("ingredient.id"), nullable=False)
+    grams_used = db.Column(db.Numeric(12, 3), nullable=False)
+
+    sales_recipe = db.relationship("SalesRecipe", backref="ingredients")
+    ingredient = db.relationship("Ingredient")
+
+class SquareItemSalesRecipe(db.Model):
+    __tablename__ = "square_item_sales_recipe"
+
+    id = db.Column(db.Integer, primary_key=True)
+    store_name = db.Column(db.String(50), nullable=False)
+    catalog_object_id = db.Column(db.String(64), nullable=False)
+    item_name = db.Column(db.String(255), nullable=True)
+    sales_recipe_id = db.Column(db.Integer, db.ForeignKey("sales_recipe.id"), nullable=False)
+    multiplier = db.Column(db.Numeric(12, 3), nullable=False, default=1)
+    active = db.Column(db.Boolean, default=True, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    sales_recipe = db.relationship("SalesRecipe", backref="square_mappings")
+
+    __table_args__ = (
+        db.UniqueConstraint("store_name", "catalog_object_id", name="uq_square_item_sales_recipe"),
+    )
+
 class SquareOrder(db.Model):
     __tablename__ = "square_order"
 

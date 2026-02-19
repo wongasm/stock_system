@@ -1,4 +1,4 @@
-from models import db, Ingredient, Supplier, Category, StockOutRecord, Recipe, RecipeIngredient, User, Stocktake, StoreThreshold, StoreWeeklyItem, MonthlyStocktake, Invoice, WeeklyStocktake, StockInRecord, StoreInventory, SquareOrder, SquareOrderLine, SquareItemRecipe, InventoryLedger
+from models import db, Ingredient, Supplier, Category, StockOutRecord, Recipe, RecipeIngredient, User, Stocktake, StoreThreshold, StoreWeeklyItem, MonthlyStocktake, Invoice, WeeklyStocktake, StockInRecord, StoreInventory, SquareOrder, SquareOrderLine, SquareItemRecipe, InventoryLedger, SalesRecipe, SalesRecipeIngredient, SquareItemSalesRecipe
 from datetime import datetime, timedelta, timezone
 from flask import Flask, request, render_template, redirect, url_for, flash, jsonify, send_file, session
 import json
@@ -99,17 +99,34 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
             continue
 
         source_id = f"{store_name}:{line.line_uid}"
-        mapping = SquareItemRecipe.query.filter_by(
+        mapping = SquareItemSalesRecipe.query.filter_by(
             store_name=store_name,
             catalog_object_id=line.catalog_object_id,
             active=True
         ).first()
-        if not mapping:
-            unmapped.add(line.catalog_object_id)
-            continue
+        recipe_ingredients = []
+        multiplier = Decimal("1")
 
-        recipe = mapping.recipe
-        if not recipe:
+        if mapping:
+            sales_recipe = mapping.sales_recipe
+            if sales_recipe:
+                recipe_ingredients = SalesRecipeIngredient.query.filter_by(
+                    sales_recipe_id=sales_recipe.id
+                ).all()
+            multiplier = Decimal(str(mapping.multiplier or 1))
+        else:
+            legacy_mapping = SquareItemRecipe.query.filter_by(
+                store_name=store_name,
+                catalog_object_id=line.catalog_object_id,
+                active=True
+            ).first()
+            if legacy_mapping:
+                recipe_ingredients = RecipeIngredient.query.filter_by(
+                    recipe_id=legacy_mapping.recipe_id
+                ).all()
+                multiplier = Decimal(str(legacy_mapping.multiplier or 1))
+
+        if not recipe_ingredients:
             unmapped.add(line.catalog_object_id)
             continue
 
@@ -117,11 +134,9 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
         if quantity == 0:
             continue
 
-        multiplier = Decimal(str(mapping.multiplier or 1))
         sign = Decimal("1") if line.is_return else Decimal("-1")
 
-        ingredients = RecipeIngredient.query.filter_by(recipe_id=recipe.id).all()
-        for ri in ingredients:
+        for ri in recipe_ingredients:
             ingredient = Ingredient.query.get(ri.ingredient_id)
             if not ingredient:
                 continue
@@ -1169,6 +1184,116 @@ def manage_recipes():
 
     ingredients = Ingredient.query.all()
     return render_template("recipes.html", recipes=recipes_data, ingredients=ingredients)
+
+@app.route("/sales_recipes", methods=["GET", "POST"])
+@login_required
+def manage_sales_recipes():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    if request.method == "POST":
+        sales_recipe_id = request.form.get("sales_recipe_id")
+        name = (request.form.get("recipe_name") or "").strip()
+        ingredient_ids = request.form.getlist("ingredient_id[]")
+        grams_used_list = request.form.getlist("grams_used[]")
+
+        if not name:
+            return jsonify({"success": False, "message": "Please enter a recipe name."})
+        if not ingredient_ids or not grams_used_list:
+            return jsonify({"success": False, "message": "Please add at least one ingredient."})
+
+        try:
+            valid_ingredients = [
+                (int(ingredient_ids[i]), float(grams_used_list[i]))
+                for i in range(len(ingredient_ids))
+                if float(grams_used_list[i]) > 0
+            ]
+        except ValueError:
+            return jsonify({"success": False, "message": "Invalid ingredient quantity entered."})
+
+        if not valid_ingredients:
+            return jsonify({"success": False, "message": "Please add at least one valid ingredient."})
+
+        if sales_recipe_id:
+            recipe = SalesRecipe.query.get(sales_recipe_id)
+            if not recipe:
+                return jsonify({"success": False, "message": "Sales recipe not found."})
+            existing = SalesRecipe.query.filter(SalesRecipe.name == name, SalesRecipe.id != recipe.id).first()
+            if existing:
+                return jsonify({"success": False, "message": "Recipe name already exists."})
+            recipe.name = name
+            SalesRecipeIngredient.query.filter_by(sales_recipe_id=sales_recipe_id).delete()
+        else:
+            existing = SalesRecipe.query.filter_by(name=name).first()
+            if existing:
+                return jsonify({"success": False, "message": "Recipe name already exists."})
+            recipe = SalesRecipe(name=name)
+            db.session.add(recipe)
+            db.session.commit()
+
+        for ingredient_id, grams_used in valid_ingredients:
+            entry = SalesRecipeIngredient(
+                sales_recipe_id=recipe.id,
+                ingredient_id=ingredient_id,
+                grams_used=grams_used
+            )
+            db.session.add(entry)
+
+        db.session.commit()
+        return jsonify({"success": True, "message": "Sales recipe saved successfully!"})
+
+    recipes = SalesRecipe.query.order_by(SalesRecipe.name.asc()).all()
+    recipes_data = {}
+    for recipe in recipes:
+        recipe_ingredients = SalesRecipeIngredient.query.filter_by(sales_recipe_id=recipe.id).all()
+        recipes_data[recipe.id] = {
+            "id": recipe.id,
+            "name": recipe.name,
+            "ingredients": [
+                {
+                    "id": ri.ingredient_id,
+                    "name": Ingredient.query.get(ri.ingredient_id).name if Ingredient.query.get(ri.ingredient_id) else "Unknown",
+                    "quantity": ri.grams_used
+                }
+                for ri in recipe_ingredients
+            ]
+        }
+
+    ingredients = Ingredient.query.all()
+    return render_template("sales_recipes.html", recipes=recipes_data, ingredients=ingredients)
+
+@app.route("/get_sales_recipe/<int:recipe_id>", methods=["GET"])
+@login_required
+def get_sales_recipe(recipe_id):
+    if current_user.role != "admin":
+        return jsonify({"success": False, "message": "Access denied."})
+
+    recipe = SalesRecipe.query.get(recipe_id)
+    if not recipe:
+        return jsonify({"success": False, "message": "Recipe not found."})
+
+    recipe_ingredients = SalesRecipeIngredient.query.filter_by(sales_recipe_id=recipe.id).all()
+    ingredients_data = [
+        {"id": ri.ingredient_id, "quantity": float(ri.grams_used)}
+        for ri in recipe_ingredients
+    ]
+    return jsonify({"success": True, "name": recipe.name, "ingredients": ingredients_data})
+
+@app.route("/delete_sales_recipe/<int:recipe_id>", methods=["POST"])
+@login_required
+def delete_sales_recipe(recipe_id):
+    if current_user.role != "admin":
+        return jsonify({"success": False, "message": "Access denied."})
+
+    recipe = SalesRecipe.query.get(recipe_id)
+    if not recipe:
+        return jsonify({"success": False, "message": "Recipe not found."})
+
+    SalesRecipeIngredient.query.filter_by(sales_recipe_id=recipe_id).delete()
+    db.session.delete(recipe)
+    db.session.commit()
+    return jsonify({"success": True, "message": "Sales recipe deleted."})
 
 GST_RATE = Decimal("0.10")  # 🔹 Used ONLY for revenue display, NOT cost
 
@@ -3120,19 +3245,19 @@ def square_mappings():
                 multiplier = Decimal("1")
 
             item_name = request.form.get("item_name")
-            mapping = SquareItemRecipe.query.filter_by(
+            mapping = SquareItemSalesRecipe.query.filter_by(
                 store_name=store_name,
                 catalog_object_id=catalog_object_id
             ).first()
 
             if not mapping:
-                mapping = SquareItemRecipe(
+                mapping = SquareItemSalesRecipe(
                     store_name=store_name,
                     catalog_object_id=catalog_object_id
                 )
                 db.session.add(mapping)
 
-            mapping.recipe_id = int(recipe_id)
+            mapping.sales_recipe_id = int(recipe_id)
             mapping.item_name = item_name
             mapping.multiplier = multiplier
             mapping.active = True
@@ -3143,10 +3268,8 @@ def square_mappings():
         flash("Missing catalog object ID or recipe.", "danger")
 
     recipes = []
-    for recipe in Recipe.query.all():
-        output = Ingredient.query.get(recipe.output_item_id)
-        if output:
-            recipes.append({"id": recipe.id, "name": output.name})
+    for recipe in SalesRecipe.query.order_by(SalesRecipe.name.asc()).all():
+        recipes.append({"id": recipe.id, "name": recipe.name})
 
     line_items = []
     if selected_store:
@@ -3158,7 +3281,7 @@ def square_mappings():
             SquareOrderLine.catalog_object_id.isnot(None)
         ).group_by(SquareOrderLine.catalog_object_id).all()
 
-        mappings = SquareItemRecipe.query.filter_by(store_name=selected_store).all()
+        mappings = SquareItemSalesRecipe.query.filter_by(store_name=selected_store).all()
         mapping_map = {m.catalog_object_id: m for m in mappings}
 
         for row in raw_items:
@@ -3166,7 +3289,7 @@ def square_mappings():
             line_items.append({
                 "catalog_object_id": row.catalog_object_id,
                 "item_name": row.item_name,
-                "recipe_id": mapping.recipe_id if mapping else None,
+                "recipe_id": mapping.sales_recipe_id if mapping else None,
                 "multiplier": float(mapping.multiplier) if mapping and mapping.multiplier is not None else 1.0,
                 "mapped": bool(mapping)
             })

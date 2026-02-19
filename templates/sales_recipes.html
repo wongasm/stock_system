@@ -1,0 +1,442 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4" id="sales-recipes-page">
+
+    <!-- PAGE HEADER -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Sales Recipe Builder</h2>
+            <div class="small-text">Create recipes specifically for Square mapping without adding output items.</div>
+        </div>
+        <div class="stats-pill">
+            <div class="stats-label">Sales Recipes</div>
+            <div class="stats-value">{{ recipes|length }}</div>
+        </div>
+    </div>
+
+    <!-- Success / Error Messages -->
+    <div id="recipeMessage" class="alert d-none mx-3"></div>
+
+    <div class="row g-4 px-3">
+        <!-- CREATE / EDIT RECIPE -->
+        <div class="col-12 col-lg-5">
+            <div class="card app-card p-4 h-100">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h4 class="fw-bold mb-1">Create or Edit</h4>
+                        <div class="small-text">Name the item as sold (e.g. Iced Matcha Large).</div>
+                    </div>
+                </div>
+
+                <form id="salesRecipeForm">
+                    <input type="hidden" name="sales_recipe_id" id="sales_recipe_id">
+
+                    <!-- Recipe Name -->
+                    <label class="form-label fw-semibold small-text">Sales Recipe Name</label>
+                    <input type="text" name="recipe_name" id="recipe_name" class="form-control mb-3" placeholder="e.g. Iced Matcha Large" required>
+
+                    <!-- INGREDIENT LIST -->
+                    <div id="ingredientsList" class="recipe-ingredients">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h5 class="fw-bold mb-0">Ingredients</h5>
+                            <span class="badge-soft">{{ ingredients|length }} available</span>
+                        </div>
+
+                        <div class="ingredient-group recipe-row">
+                            <div class="row g-2 align-items-end">
+                                <div class="col-12">
+                                    <label class="form-label fw-semibold small-text">Ingredient</label>
+                                    <select name="ingredient_id[]" class="form-select" required>
+                                        <option value="" disabled selected>Select Ingredient</option>
+                                        {% for ing in ingredients %}
+                                        <option value="{{ ing.id }}">{{ ing.name }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label fw-semibold small-text">Grams Used</label>
+                                    <div class="input-group">
+                                        <input type="number" name="grams_used[]" class="form-control grams-input"
+                                               placeholder="Enter grams" required>
+                                        <span class="input-group-text">g</span>
+                                    </div>
+                                </div>
+                                <div class="col-12">
+                                    <button type="button" class="btn btn-outline-danger btn-sm remove-ingredient w-100">Remove</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn app-btn-secondary w-100 mb-3"
+                            onclick="addIngredientField()">+ Add Ingredient</button>
+
+                    <button type="submit" class="btn app-btn-primary w-100">
+                        <span id="submitText">Save Sales Recipe</span>
+                        <span id="loadingSpinner" class="spinner-border spinner-border-sm d-none"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- EXISTING RECIPES LIST -->
+        <div class="col-12 col-lg-7">
+            <div class="card app-card p-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+                    <div>
+                        <h4 class="fw-bold mb-1">Existing Sales Recipes</h4>
+                        <div class="small-text">Click a recipe to expand ingredients.</div>
+                    </div>
+                    <input type="text" id="recipeSearch" class="form-control search-input" placeholder="Search recipes...">
+                </div>
+
+                <div class="recipe-list">
+                    {% for recipe in recipes.values() %}
+                    <div class="recipe-card" data-name="{{ recipe.name|lower }}" onclick="toggleRecipe(this)">
+                        <div class="recipe-header">
+                            <div>
+                                <div class="fw-bold recipe-title">{{ recipe.name }}</div>
+                                <div class="small-text text-muted">Recipe #{{ recipe.id }}</div>
+                            </div>
+                            <div class="recipe-meta">
+                                <span class="badge-soft">{{ recipe.ingredients|length }} items</span>
+                                <span class="chevron">▾</span>
+                            </div>
+                        </div>
+
+                        <div class="recipe-details">
+                            {% for ingredient in recipe.ingredients %}
+                            <div class="ingredient-line">
+                                <div class="fw-semibold">{{ ingredient.name }}</div>
+                                <div class="muted">{{ ingredient.quantity }} g</div>
+                            </div>
+                            {% endfor %}
+
+                            <div class="d-flex gap-2 mt-3">
+                                <button class="btn app-btn-warning btn-sm w-100"
+                                    onclick="event.stopPropagation(); editRecipe({{ recipe.id }})">
+                                    Edit
+                                </button>
+                                <button class="btn app-btn-danger btn-sm w-100"
+                                    onclick="event.stopPropagation(); deleteRecipe({{ recipe.id }})">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    {% if recipes|length == 0 %}
+                    <div class="muted">No sales recipes created yet.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- JS -->
+<script>
+function addIngredientField() {
+    let container = document.getElementById("ingredientsList");
+
+    let div = document.createElement("div");
+    div.classList.add("ingredient-group", "recipe-row");
+
+    div.innerHTML = `
+        <div class="row g-2 align-items-end">
+            <div class="col-12">
+                <label class="form-label fw-semibold small-text">Ingredient</label>
+                <select name="ingredient_id[]" class="form-select" required>
+                    <option value="" disabled selected>Select Ingredient</option>
+                    {% for ing in ingredients %}
+                    <option value="{{ ing.id }}">{{ ing.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12">
+                <label class="form-label fw-semibold small-text">Grams Used</label>
+                <div class="input-group">
+                    <input type="number" name="grams_used[]" class="form-control grams-input"
+                        placeholder="Enter grams" required>
+                    <span class="input-group-text">g</span>
+                </div>
+            </div>
+            <div class="col-12">
+                <button type="button" class="btn btn-outline-danger btn-sm remove-ingredient w-100">Remove</button>
+            </div>
+        </div>
+    `;
+    container.appendChild(div);
+}
+
+document.addEventListener("click", function (event) {
+    if (event.target.classList.contains("remove-ingredient")) {
+        event.target.closest(".ingredient-group").remove();
+    }
+});
+
+document.getElementById("salesRecipeForm").addEventListener("submit", function (event) {
+    event.preventDefault();
+
+    const submitButton = event.target.querySelector("button[type='submit']");
+    const submitText = document.getElementById("submitText");
+    const loadingSpinner = document.getElementById("loadingSpinner");
+    const messageBox = document.getElementById("recipeMessage");
+
+    submitButton.disabled = true;
+    submitText.classList.add("d-none");
+    loadingSpinner.classList.remove("d-none");
+
+    let formData = new FormData(this);
+
+    fetch("{{ url_for('manage_sales_recipes') }}", { method: "POST", body: formData })
+        .then(res => res.json())
+        .then(data => {
+            messageBox.classList.remove("d-none");
+            if (data.success) {
+                messageBox.className = "alert alert-success mx-3";
+                messageBox.innerText = "✅ " + data.message;
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                messageBox.className = "alert alert-danger mx-3";
+                messageBox.innerText = "❌ " + data.message;
+            }
+        })
+        .catch(() => {
+            messageBox.className = "alert alert-danger mx-3";
+            messageBox.innerText = "❌ Unexpected error.";
+            messageBox.classList.remove("d-none");
+        })
+        .finally(() => {
+            submitButton.disabled = false;
+            submitText.classList.remove("d-none");
+            loadingSpinner.classList.add("d-none");
+        });
+});
+
+function toggleRecipe(card) {
+    let details = card.querySelector(".recipe-details");
+    const isOpen = details.style.display === "block";
+    details.style.display = isOpen ? "none" : "block";
+    card.classList.toggle("open", !isOpen);
+}
+
+function deleteRecipe(id) {
+    if (!confirm("Delete this recipe?")) return;
+
+    fetch(`/delete_sales_recipe/${id}`, { method: "POST" })
+        .then(res => res.json())
+        .then(data => {
+            alert(data.message);
+            if (data.success) location.reload();
+        });
+}
+
+function editRecipe(id) {
+    fetch(`/get_sales_recipe/${id}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) return alert("Failed to load recipe.");
+
+            document.getElementById("sales_recipe_id").value = id;
+            document.getElementById("recipe_name").value = data.name;
+            document.getElementById("ingredientsList").innerHTML = "";
+
+            data.ingredients.forEach(ing => {
+                addIngredientField();
+                let group = document.querySelector("#ingredientsList .ingredient-group:last-child");
+                group.querySelector("select").value = ing.id;
+                group.querySelector("input[name='grams_used[]']").value = ing.quantity;
+            });
+        });
+}
+
+const searchInput = document.getElementById("recipeSearch");
+if (searchInput) {
+    searchInput.addEventListener("input", () => {
+        const query = searchInput.value.trim().toLowerCase();
+        document.querySelectorAll(".recipe-card").forEach(card => {
+            const name = (card.dataset.name || "").toLowerCase();
+            card.style.display = name.includes(query) ? "" : "none";
+        });
+    });
+}
+</script>
+
+<!-- CSS -->
+<style>
+#sales-recipes-page {
+    --card-bg: #ffffff;
+    --card-border: rgba(15, 23, 42, 0.08);
+    --accent: #0ea5e9;
+    --accent-2: #10b981;
+}
+
+.small-text { font-size: 0.85rem; color: #6B7280; }
+.app-title {
+    font-size: 2rem;
+    letter-spacing: -0.02em;
+}
+.app-card {
+    border-radius: 18px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+}
+.stats-pill {
+    background: rgba(14, 165, 233, 0.12);
+    border-radius: 16px;
+    padding: 12px 18px;
+    min-width: 140px;
+}
+.stats-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #475569;
+    font-weight: 600;
+}
+.stats-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.recipe-ingredients {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.recipe-row {
+    border: 1px dashed rgba(148, 163, 184, 0.5);
+    border-radius: 14px;
+    padding: 14px;
+    background: #f8fafc;
+}
+
+.recipe-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.recipe-card {
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    padding: 16px;
+    background: #ffffff;
+    transition: 0.25s ease;
+    cursor: pointer;
+}
+
+.recipe-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+}
+
+.recipe-card.open {
+    border-color: rgba(14, 165, 233, 0.5);
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.16);
+}
+
+.recipe-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+}
+
+.recipe-title {
+    font-size: 1.05rem;
+}
+
+.recipe-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.chevron {
+    font-size: 1rem;
+    color: #94a3b8;
+    transition: transform 0.2s ease;
+}
+
+.recipe-card.open .chevron {
+    transform: rotate(180deg);
+}
+
+.recipe-details {
+    display: none;
+    margin-top: 16px;
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 14px;
+}
+
+.ingredient-line {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px dashed rgba(148, 163, 184, 0.4);
+}
+
+.ingredient-line:last-child {
+    border-bottom: none;
+}
+
+.badge-soft {
+    background: rgba(16, 185, 129, 0.14);
+    color: #0f766e;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.search-input {
+    max-width: 240px;
+    border-radius: 10px;
+}
+
+.app-btn-primary {
+    background: linear-gradient(135deg, #0ea5e9, #14b8a6) !important;
+    color: #fff !important;
+    border-radius: 12px !important;
+    font-weight: 600;
+}
+
+.app-btn-secondary {
+    background: #e2e8f0 !important;
+    color: #0f172a !important;
+    border-radius: 12px !important;
+    font-weight: 600;
+}
+
+.app-btn-warning {
+    background: #fef3c7 !important;
+    color: #92400e !important;
+    border-radius: 10px !important;
+    font-weight: 600;
+}
+
+.app-btn-danger {
+    background: #fee2e2 !important;
+    color: #991b1b !important;
+    border-radius: 10px !important;
+    font-weight: 600;
+}
+
+@media (max-width: 992px) {
+    .search-input {
+        width: 100%;
+        max-width: 100%;
+    }
+}
+</style>
+
+{% endblock %}
