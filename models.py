@@ -252,7 +252,7 @@ class MonthlyStocktake(db.Model):
 
     recorded_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-    ingredient = db.relationship("Ingredient")
+    ingredient = db.relationship("Ingredient", overlaps="ingredient_stock,monthly_stocktakes")
 
 
 class Invoice(db.Model):
