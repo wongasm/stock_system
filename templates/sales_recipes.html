@@ -47,7 +47,7 @@
                             <div class="row g-2 align-items-end">
                                 <div class="col-12">
                                     <label class="form-label fw-semibold small-text">Ingredient</label>
-                                    <select name="ingredient_id[]" class="form-select" required>
+                                    <select name="ingredient_id[]" class="form-select ingredient-select" required>
                                         <option value="" disabled selected>Select Ingredient</option>
                                         {% for ing in ingredients %}
                                         <option value="{{ ing.id }}">{{ ing.name }}</option>
@@ -149,7 +149,7 @@ function addIngredientField() {
         <div class="row g-2 align-items-end">
             <div class="col-12">
                 <label class="form-label fw-semibold small-text">Ingredient</label>
-                <select name="ingredient_id[]" class="form-select" required>
+                <select name="ingredient_id[]" class="form-select ingredient-select" required>
                     <option value="" disabled selected>Select Ingredient</option>
                     {% for ing in ingredients %}
                     <option value="{{ ing.id }}">{{ ing.name }}</option>
@@ -170,11 +170,27 @@ function addIngredientField() {
         </div>
     `;
     container.appendChild(div);
+
+    const newSelect = div.querySelector(".ingredient-select");
+    if (newSelect && window.$ && $(newSelect).select2) {
+        $(newSelect).select2({
+            width: "100%",
+            placeholder: "Select Ingredient",
+            minimumResultsForSearch: 0
+        });
+    }
 }
 
 document.addEventListener("click", function (event) {
     if (event.target.classList.contains("remove-ingredient")) {
-        event.target.closest(".ingredient-group").remove();
+        const group = event.target.closest(".ingredient-group");
+        const select = group ? group.querySelector(".ingredient-select") : null;
+        if (select && window.$ && $(select).select2) {
+            $(select).select2("destroy");
+        }
+        if (group) {
+            group.remove();
+        }
     }
 });
 
@@ -248,11 +264,25 @@ function editRecipe(id) {
             data.ingredients.forEach(ing => {
                 addIngredientField();
                 let group = document.querySelector("#ingredientsList .ingredient-group:last-child");
-                group.querySelector("select").value = ing.id;
+                const select = group.querySelector("select");
+                select.value = ing.id;
+                if (window.$ && $(select).select2) {
+                    $(select).trigger("change");
+                }
                 group.querySelector("input[name='grams_used[]']").value = ing.quantity;
             });
         });
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+    if (window.$ && $(".ingredient-select").select2) {
+        $(".ingredient-select").select2({
+            width: "100%",
+            placeholder: "Select Ingredient",
+            minimumResultsForSearch: 0
+        });
+    }
+});
 
 const searchInput = document.getElementById("recipeSearch");
 if (searchInput) {
@@ -401,6 +431,22 @@ if (searchInput) {
 .search-input {
     max-width: 240px;
     border-radius: 10px;
+}
+
+.select2-container--default .select2-selection--single {
+    height: 42px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    padding: 6px 10px;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 28px;
+    color: #0f172a;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 42px;
 }
 
 .app-btn-primary {
