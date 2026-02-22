@@ -1231,33 +1231,44 @@ def manage_sales_recipes():
         if not valid_ingredients:
             return jsonify({"success": False, "message": "Please add at least one valid ingredient."})
 
-        if sales_recipe_id:
-            recipe = SalesRecipe.query.get(sales_recipe_id)
-            if not recipe:
-                return jsonify({"success": False, "message": "Sales recipe not found."})
-            existing = SalesRecipe.query.filter(SalesRecipe.name == name, SalesRecipe.id != recipe.id).first()
-            if existing:
-                return jsonify({"success": False, "message": "Recipe name already exists."})
-            recipe.name = name
-            SalesRecipeIngredient.query.filter_by(sales_recipe_id=sales_recipe_id).delete()
-        else:
-            existing = SalesRecipe.query.filter_by(name=name).first()
-            if existing:
-                return jsonify({"success": False, "message": "Recipe name already exists."})
-            recipe = SalesRecipe(name=name)
-            db.session.add(recipe)
+        try:
+            if sales_recipe_id:
+                recipe = SalesRecipe.query.get(sales_recipe_id)
+                if not recipe:
+                    return jsonify({"success": False, "message": "Sales recipe not found."})
+                existing = SalesRecipe.query.filter(SalesRecipe.name == name, SalesRecipe.id != recipe.id).first()
+                if existing:
+                    return jsonify({"success": False, "message": "Recipe name already exists."})
+                recipe.name = name
+                SalesRecipeIngredient.query.filter_by(
+                    sales_recipe_id=sales_recipe_id
+                ).delete(synchronize_session=False)
+            else:
+                existing = SalesRecipe.query.filter_by(name=name).first()
+                if existing:
+                    return jsonify({"success": False, "message": "Recipe name already exists."})
+                recipe = SalesRecipe(name=name)
+                db.session.add(recipe)
+                db.session.flush()
+
+            for ingredient_id, grams_used in valid_ingredients:
+                entry = SalesRecipeIngredient(
+                    sales_recipe_id=recipe.id,
+                    ingredient_id=ingredient_id,
+                    grams_used=grams_used
+                )
+                db.session.add(entry)
+
             db.session.commit()
-
-        for ingredient_id, grams_used in valid_ingredients:
-            entry = SalesRecipeIngredient(
-                sales_recipe_id=recipe.id,
-                ingredient_id=ingredient_id,
-                grams_used=grams_used
-            )
-            db.session.add(entry)
-
-        db.session.commit()
-        return jsonify({"success": True, "message": "Sales recipe saved successfully!"})
+            return jsonify({"success": True, "message": "Sales recipe saved successfully!"})
+        except OperationalError as exc:
+            db.session.rollback()
+            if "Lock wait timeout exceeded" in str(exc):
+                return jsonify({"success": False, "message": "Database is busy. Please try again."})
+            return jsonify({"success": False, "message": "Database error. Please try again."})
+        except SQLAlchemyError:
+            db.session.rollback()
+            return jsonify({"success": False, "message": "Database error. Please try again."})
 
     recipes = SalesRecipe.query.order_by(SalesRecipe.name.asc()).all()
     recipes_data = {}
@@ -1302,14 +1313,25 @@ def delete_sales_recipe(recipe_id):
     if current_user.role != "admin":
         return jsonify({"success": False, "message": "Access denied."})
 
-    recipe = SalesRecipe.query.get(recipe_id)
-    if not recipe:
+    recipe_exists = db.session.query(SalesRecipe.id).filter_by(id=recipe_id).first()
+    if not recipe_exists:
         return jsonify({"success": False, "message": "Recipe not found."})
 
-    SalesRecipeIngredient.query.filter_by(sales_recipe_id=recipe_id).delete()
-    db.session.delete(recipe)
-    db.session.commit()
-    return jsonify({"success": True, "message": "Sales recipe deleted."})
+    try:
+        SalesRecipeIngredient.query.filter_by(
+            sales_recipe_id=recipe_id
+        ).delete(synchronize_session=False)
+        SalesRecipe.query.filter_by(id=recipe_id).delete(synchronize_session=False)
+        db.session.commit()
+        return jsonify({"success": True, "message": "Sales recipe deleted."})
+    except OperationalError as exc:
+        db.session.rollback()
+        if "Lock wait timeout exceeded" in str(exc):
+            return jsonify({"success": False, "message": "Database is busy. Please try again."})
+        return jsonify({"success": False, "message": "Database error. Please try again."})
+    except SQLAlchemyError:
+        db.session.rollback()
+        return jsonify({"success": False, "message": "Database error. Please try again."})
 
 GST_RATE = Decimal("0.10")  # 🔹 Used ONLY for revenue display, NOT cost
 
