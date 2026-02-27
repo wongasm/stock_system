@@ -1200,27 +1200,49 @@ def manage_recipes():
         db.session.commit()
         return jsonify({"success": True, "message": "Recipe saved successfully!"})
 
-    # ✅ Load all recipes with their ingredients
+    # ✅ Load all recipes with their ingredients (optimized)
     recipes = Recipe.query.all()
     recipes_data = {}
 
-    for recipe in recipes:
-        output_item = Ingredient.query.get(recipe.output_item_id)
-        if not output_item:
-            print(f"⚠️ Warning: Recipe {recipe.id} has a missing output item. Skipping.")
-            continue  # Skip recipes with missing output items
+    if recipes:
+        recipe_ids = [r.id for r in recipes]
+        output_item_ids = {r.output_item_id for r in recipes if r.output_item_id}
+        output_items = Ingredient.query.filter(Ingredient.id.in_(output_item_ids)).all()
+        output_map = {i.id: i for i in output_items}
 
-        recipe_ingredients = RecipeIngredient.query.filter_by(recipe_id=recipe.id).all()
-        recipes_data[recipe.id] = {
-            "id": recipe.id,
-            "output_item_name": output_item.name,
-            "ingredients": [
-                {"id": ri.ingredient_id, "name": Ingredient.query.get(ri.ingredient_id).name, "quantity": ri.grams_used}
-                for ri in recipe_ingredients if Ingredient.query.get(ri.ingredient_id)
-            ]
+        recipe_ingredients = RecipeIngredient.query.filter(
+            RecipeIngredient.recipe_id.in_(recipe_ids)
+        ).all()
+        ingredient_ids = {ri.ingredient_id for ri in recipe_ingredients}
+        ingredient_map = {
+            i.id: i for i in Ingredient.query.filter(Ingredient.id.in_(ingredient_ids)).all()
         }
 
-    ingredients = Ingredient.query.all()
+        ingredients_by_recipe = defaultdict(list)
+        for ri in recipe_ingredients:
+            ingredients_by_recipe[ri.recipe_id].append(ri)
+
+        for recipe in recipes:
+            output_item = output_map.get(recipe.output_item_id)
+            if not output_item:
+                print(f"⚠️ Warning: Recipe {recipe.id} has a missing output item. Skipping.")
+                continue
+
+            recipes_data[recipe.id] = {
+                "id": recipe.id,
+                "output_item_name": output_item.name,
+                "ingredients": [
+                    {
+                        "id": ri.ingredient_id,
+                        "name": ingredient_map.get(ri.ingredient_id).name,
+                        "quantity": ri.grams_used
+                    }
+                    for ri in ingredients_by_recipe.get(recipe.id, [])
+                    if ingredient_map.get(ri.ingredient_id)
+                ]
+            }
+
+    ingredients = Ingredient.query.order_by(Ingredient.name.asc()).all()
     return render_template("recipes.html", recipes=recipes_data, ingredients=ingredients)
 
 @app.route("/sales_recipes", methods=["GET", "POST"])
@@ -1294,22 +1316,36 @@ def manage_sales_recipes():
 
     recipes = SalesRecipe.query.order_by(SalesRecipe.name.asc()).all()
     recipes_data = {}
-    for recipe in recipes:
-        recipe_ingredients = SalesRecipeIngredient.query.filter_by(sales_recipe_id=recipe.id).all()
-        recipes_data[recipe.id] = {
-            "id": recipe.id,
-            "name": recipe.name,
-            "ingredients": [
-                {
-                    "id": ri.ingredient_id,
-                    "name": Ingredient.query.get(ri.ingredient_id).name if Ingredient.query.get(ri.ingredient_id) else "Unknown",
-                    "quantity": ri.grams_used
-                }
-                for ri in recipe_ingredients
-            ]
+
+    if recipes:
+        recipe_ids = [r.id for r in recipes]
+        recipe_ingredients = SalesRecipeIngredient.query.filter(
+            SalesRecipeIngredient.sales_recipe_id.in_(recipe_ids)
+        ).all()
+        ingredient_ids = {ri.ingredient_id for ri in recipe_ingredients}
+        ingredient_map = {
+            i.id: i for i in Ingredient.query.filter(Ingredient.id.in_(ingredient_ids)).all()
         }
 
-    ingredients = Ingredient.query.all()
+        ingredients_by_recipe = defaultdict(list)
+        for ri in recipe_ingredients:
+            ingredients_by_recipe[ri.sales_recipe_id].append(ri)
+
+        for recipe in recipes:
+            recipes_data[recipe.id] = {
+                "id": recipe.id,
+                "name": recipe.name,
+                "ingredients": [
+                    {
+                        "id": ri.ingredient_id,
+                        "name": ingredient_map.get(ri.ingredient_id).name if ingredient_map.get(ri.ingredient_id) else "Unknown",
+                        "quantity": ri.grams_used
+                    }
+                    for ri in ingredients_by_recipe.get(recipe.id, [])
+                ]
+            }
+
+    ingredients = Ingredient.query.order_by(Ingredient.name.asc()).all()
     return render_template("sales_recipes.html", recipes=recipes_data, ingredients=ingredients)
 
 @app.route("/get_sales_recipe/<int:recipe_id>", methods=["GET"])

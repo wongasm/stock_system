@@ -91,7 +91,10 @@
 
     <!-- TEMP STOCK OUT LIST -->
     <div class="card app-card mx-3 mb-4 p-4">
-        <h5 class="fw-bold mb-3">Items to Be Stocked Out</h5>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h5 class="fw-bold mb-0">Items to Be Stocked Out</h5>
+            <span class="badge-soft" id="stockOutCount">0 items</span>
+        </div>
 
         <div class="table-responsive app-table-container">
             <table class="table table-hover app-table mb-0" id="tempStockOutTable">
@@ -116,7 +119,11 @@
 
     <!-- CURRENT STOCK TABLE -->
     <div class="card app-card mx-3 mb-5 p-4">
-        <h5 class="fw-bold mb-3">Current Stock</h5>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h5 class="fw-bold mb-0">Current Stock</h5>
+            <input type="text" id="stockOutTableSearch" class="form-control search-input"
+                   placeholder="Search stock list..." style="max-width: 240px;">
+        </div>
 
         <div class="table-responsive app-table-container">
             <table class="table table-hover app-table mb-0">
@@ -150,6 +157,7 @@
 <!-- JS -->
 <script>
 let stockOutItems = [];
+const stockOutCount = document.getElementById("stockOutCount");
 
 function updateStockAvailability() {
     const selected = document.getElementById("ingredient_id");
@@ -188,6 +196,9 @@ function addToStockOutTable() {
     }
 
     stockOutItems.push({ store, stockDate, ingredientId, ingredientName, stockRemoved });
+    if (stockOutCount) {
+        stockOutCount.textContent = `${stockOutItems.length} item${stockOutItems.length === 1 ? "" : "s"}`;
+    }
 
     const row = document.createElement("tr");
     row.setAttribute("data-ingredient-id", ingredientId);
@@ -215,6 +226,9 @@ function removeFromStockOutTable(button) {
     );
 
     row.remove();
+    if (stockOutCount) {
+        stockOutCount.textContent = `${stockOutItems.length} item${stockOutItems.length === 1 ? "" : "s"}`;
+    }
 }
 
 function submitStockOut() {
@@ -250,61 +264,17 @@ $(document).ready(function () {
     });
 });
 
+const stockOutTableSearch = document.getElementById("stockOutTableSearch");
+if (stockOutTableSearch) {
+    stockOutTableSearch.addEventListener("input", () => {
+        const query = stockOutTableSearch.value.trim().toLowerCase();
+        document.querySelectorAll("tbody tr.app-row").forEach(row => {
+            const nameCell = row.querySelector("td:nth-child(2)");
+            const name = nameCell ? nameCell.textContent.trim().toLowerCase() : "";
+            row.style.display = name.includes(query) ? "" : "none";
+        });
+    });
+}
 </script>
-
-<!-- CSS -->
-<style>
-body {
-    background: #F5F7FA;
-    font-family: Inter, -apple-system, BlinkMacSystemFont;
-}
-
-/* CARDS */
-.app-card {
-    border-radius: 18px;
-    background: #fff;
-    border: 1px solid rgba(0,0,0,0.05);
-    box-shadow: 0 4px 14px rgba(0,0,0,0.06);
-}
-
-/* BUTTONS */
-.app-btn {
-    border-radius: 12px !important;
-    padding: 10px 18px !important;
-    font-weight: 600 !important;
-}
-
-.app-btn-warning {
-    background: #FBBF24 !important;
-    color: white !important;
-}
-
-.app-btn-danger {
-    background: #EF4444 !important;
-    color: white !important;
-}
-
-/* TABLES */
-.app-table-container {
-    border-radius: 14px;
-    overflow: hidden;
-}
-
-.app-table tbody tr {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-}
-
-.app-thead {
-    background: #111827;
-    color: white;
-}
-
-.small-text {
-    font-size: 0.85rem;
-    color: #6B7280;
-}
-</style>
 
 {% endblock %}

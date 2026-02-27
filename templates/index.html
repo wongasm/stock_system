@@ -48,7 +48,13 @@
                     </select>
                 </div>
 
-                <div class="col-md-4 col-12 d-flex gap-2">
+                <div class="col-md-4 col-12">
+                    <label class="form-label fw-semibold small-text">Quick Search</label>
+                    <input type="text" id="ingredientSearch" class="form-control search-input"
+                           placeholder="Search ingredients by name...">
+                </div>
+
+                <div class="col-12 d-flex gap-2">
                     <button type="submit" class="btn app-btn-primary app-btn app-btn-auto">Apply</button>
                     <a href="{{ url_for('index') }}" class="btn app-btn-secondary app-btn app-btn-auto">Reset</a>
                 </div>
@@ -204,56 +210,23 @@ function toggleDetails(row) {
         next.style.display = next.style.display === "table-row" ? "none" : "table-row";
     }
 }
+
+const ingredientSearch = document.getElementById("ingredientSearch");
+if (ingredientSearch) {
+    ingredientSearch.addEventListener("input", () => {
+        const query = ingredientSearch.value.trim().toLowerCase();
+        document.querySelectorAll("tbody tr.app-row").forEach(row => {
+            const nameCell = row.querySelector("td");
+            const name = nameCell ? nameCell.textContent.trim().toLowerCase() : "";
+            const match = name.includes(query);
+            row.style.display = match ? "" : "none";
+            const detailsRow = row.nextElementSibling;
+            if (detailsRow && detailsRow.classList.contains("details-row")) {
+                detailsRow.style.display = match ? detailsRow.style.display : "none";
+            }
+        });
+    });
+}
 </script>
-
-<!-- CSS -->
-<style>
-.details-row { display: none; }
-
-body {
-    background: #F5F7FA;
-    color: #111827;
-    font-family: -apple-system, BlinkMacSystemFont, "Inter", "SF Pro", sans-serif;
-}
-
-.app-card {
-    border-radius: 18px;
-    background: #ffffff;
-    border: 1px solid rgba(0,0,0,0.05);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
-}
-
-.app-btn-auto {
-    height: 42px !important;
-    padding: 0 14px !important;
-    font-size: 0.85rem !important;
-    border-radius: 8px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-}
-
-.app-btn-primary {
-    background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
-    color: #fff !important;
-}
-
-.app-btn-secondary {
-    background: #EEF1F5 !important;
-    color: #374151 !important;
-}
-
-.details-box {
-    background: #ffffff;
-    padding: 14px;
-    border-radius: 14px;
-    border: 1px solid #E5E7EB;
-}
-
-.app-thead {
-    background: #111827 !important;
-    color: #fff !important;
-}
-</style>
 
 {% endblock %}
