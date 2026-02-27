@@ -5,7 +5,10 @@
 
     <!-- PAGE HEADER -->
     <div class="d-flex justify-content-between align-items-center mb-4 px-3">
-        <h2 class="fw-bold app-title">Invoices</h2>
+        <div>
+            <h2 class="fw-bold app-title">Invoices</h2>
+            <div class="small-text">Choose a store to view invoices.</div>
+        </div>
     </div>
 
     <!-- UNPAID INVOICES -->
@@ -50,12 +53,6 @@
 
 <!-- STYLES -->
 <style>
-
-body {
-    background: #F5F7FA;
-    font-family: Inter, -apple-system, BlinkMacSystemFont;
-}
-
 /* CARD BASE STYLE */
 .store-card-inner {
     border-radius: 16px;
@@ -85,13 +82,6 @@ body {
     color: #1E293B;      /* slate-900 */
     border-color: #CBD5E1;
 }
-
-/* TEXT */
-.small-text {
-    font-size: 0.85rem;
-    color: #6B7280;
-}
-
 </style>
 
 {% endblock %}

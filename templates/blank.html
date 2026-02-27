@@ -2,97 +2,6 @@
 
 {% block content %}
 
-<style>
-    body {
-        background: #F5F4EF;
-        font-family: "Work Sans", "Segoe UI", sans-serif;
-        color: #0f172a;
-    }
-
-    .app-card {
-        border-radius: 18px;
-        background: #ffffff;
-        border: 1px solid rgba(15, 23, 42, 0.08);
-        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
-    }
-
-    .app-title {
-        font-weight: 700;
-        font-size: 1.9rem;
-    }
-
-    .muted {
-        color: #64748b;
-    }
-
-    .app-btn-primary {
-        background: linear-gradient(135deg, #10b981, #14b8a6) !important;
-        color: white !important;
-        border-radius: 12px !important;
-        font-weight: 600;
-        border: none !important;
-    }
-
-    .app-btn-secondary {
-        background: #e2e8f0 !important;
-        color: #0f172a !important;
-        border-radius: 12px !important;
-        font-weight: 600;
-        border: none !important;
-    }
-
-    .app-table-container {
-        border-radius: 14px;
-        overflow: hidden;
-    }
-
-    .app-thead {
-        background: #0f172a !important;
-        color: white !important;
-    }
-
-    .badge-soft {
-        background: rgba(15, 118, 110, 0.12);
-        color: #0f766e;
-        padding: 4px 10px;
-        border-radius: 999px;
-        font-size: 0.75rem;
-        font-weight: 600;
-    }
-
-    .badge-tag {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        padding: 4px 8px;
-        border-radius: 999px;
-        font-size: 0.7rem;
-        font-weight: 600;
-        margin-right: 6px;
-    }
-
-    .badge-daily {
-        background: rgba(59, 130, 246, 0.15);
-        color: #2563eb;
-    }
-
-    .badge-weekly {
-        background: rgba(245, 158, 11, 0.18);
-        color: #b45309;
-    }
-
-    .table td, .table th {
-        vertical-align: middle;
-    }
-
-    @media (max-width: 900px) {
-        .action-group {
-            flex-direction: column;
-            gap: 8px;
-        }
-    }
-</style>
-
 <div class="container-fluid p-0 mt-5 pt-4">
 
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4 px-3">
@@ -122,6 +31,10 @@
         </div>
 
         {% if items %}
+        <div class="mb-3">
+            <input type="text" id="stocktakeSearch" class="form-control search-input"
+                   placeholder="Search stocktake items...">
+        </div>
         <div class="table-responsive app-table-container">
             <table class="table table-hover mb-0">
                 <thead class="app-thead">
@@ -166,5 +79,19 @@
         {% endif %}
     </div>
 </div>
+
+<script>
+const stocktakeSearch = document.getElementById("stocktakeSearch");
+if (stocktakeSearch) {
+    stocktakeSearch.addEventListener("input", () => {
+        const query = stocktakeSearch.value.trim().toLowerCase();
+        document.querySelectorAll("tbody tr").forEach(row => {
+            const nameCell = row.querySelector("td");
+            const name = nameCell ? nameCell.textContent.trim().toLowerCase() : "";
+            row.style.display = name.includes(query) ? "" : "none";
+        });
+    });
+}
+</script>
 
 {% endblock %}

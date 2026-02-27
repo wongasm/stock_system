@@ -1,26 +1,35 @@
 {% extends "navbar.html" %}
 
 {% block content %}
-<div class="container">
-    <h2>Manage Store Thresholds</h2>
-
-    <!-- ✅ Store Filter Dropdown -->
-    <div class="mb-3">
-        <label for="filterStore" class="form-label">Filter by Store:</label>
-        <select id="filterStore" class="form-control">
-            <option value="all">All Stores</option>
-            {% for store in stores %}
-                <option value="{{ store.username }}">{{ store.username }}</option>
-            {% endfor %}
-        </select>
+<div class="container-fluid p-0 mt-5 pt-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Store Thresholds</h2>
+            <div class="small-text">Set and manage per-store ingredient thresholds.</div>
+        </div>
+        <span class="badge-soft">{{ thresholds|length }} thresholds</span>
     </div>
 
-    <!-- ✅ Form to Add a New Threshold -->
-    <form id="thresholdForm" method="POST" action="{{ url_for('manage_thresholds') }}" class="mb-3">
-        <div class="row">
+    <div class="card app-card mx-3 mb-4 p-4">
+        <div class="row g-3 align-items-end">
             <div class="col-md-4">
-                <label for="store_id">Select Store:</label>
-                <select name="store_id" class="form-control">
+                <label for="filterStore" class="form-label small-text fw-semibold">Filter by Store</label>
+                <select id="filterStore" class="form-select">
+                    <option value="all">All Stores</option>
+                    {% for store in stores %}
+                        <option value="{{ store.username }}">{{ store.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="card app-card mx-3 mb-4 p-4">
+        <h5 class="fw-bold mb-3">Add Threshold</h5>
+        <form id="thresholdForm" method="POST" action="{{ url_for('manage_thresholds') }}" class="row g-3">
+            <div class="col-md-4">
+                <label for="store_id" class="form-label small-text fw-semibold">Select Store</label>
+                <select name="store_id" class="form-select">
                     {% for store in stores %}
                         <option value="{{ store.id }}">{{ store.username }}</option>
                     {% endfor %}
@@ -28,8 +37,8 @@
             </div>
 
             <div class="col-md-4">
-                <label for="ingredient_id">Select Ingredient:</label>
-                <select name="ingredient_id" class="form-control select2">
+                <label for="ingredient_id" class="form-label small-text fw-semibold">Select Ingredient</label>
+                <select name="ingredient_id" class="form-select select2">
                     <option value="">Search and select an ingredient...</option>
                     {% for ingredient in ingredients %}
                         <option value="{{ ingredient.id }}">{{ ingredient.name }}</option>
@@ -38,51 +47,61 @@
             </div>
 
             <div class="col-md-4">
-                <label for="threshold">Set Threshold:</label>
+                <label for="threshold" class="form-label small-text fw-semibold">Set Threshold</label>
                 <input type="number" name="threshold" class="form-control" required step="0.1">
             </div>
 
-            <div class="col-md-12 text-center mt-3">
-                <button type="submit" class="btn btn-primary btn-lg">Save Threshold</button>
+            <div class="col-12 d-flex gap-2">
+                <button type="submit" class="btn app-btn-primary app-btn">Save Threshold</button>
             </div>
-        </div>
-        <!-- ✅ Error Message Display for Duplicate Entries -->
+        </form>
         <div id="thresholdError" class="alert alert-danger mt-3 d-none"></div>
-    </form>
+    </div>
 
-    <!-- ✅ Display Existing Thresholds with Inline Edit/Delete -->
-    <h3>Existing Thresholds</h3>
-    <table class="table table-striped" id="thresholdTable">
-        <thead>
-            <tr>
-                <th>Store</th>
-                <th>Ingredient</th>
-                <th>Threshold</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for threshold in thresholds %}
-            <tr data-store="{{ threshold.store_name }}" data-ingredient="{{ threshold.ingredient_name }}">
-                <td>{{ threshold.store_name }}</td>
-                <td>{{ threshold.ingredient_name }}</td>
-                <td>
-                    <form method="POST" action="{{ url_for('update_threshold', id=threshold['id']) }}" class="d-inline-flex align-items-center">
-                        <input type="number" name="new_threshold" value="{{ threshold['threshold'] }}" step="0.1" class="form-control me-2" style="width: 100px;">
-                        <button type="submit" class="btn btn-success btn-sm px-3"><i class="fas fa-save"></i> Save</button>
-                    </form>
-                </td>
-                <td>
-                    <form method="POST" action="{{ url_for('delete_threshold', id=threshold['id']) }}" class="d-inline">
-                        <button type="submit" class="btn btn-danger btn-sm px-3" onclick="return confirm('Are you sure you want to delete this threshold?');">
-                            <i class="fas fa-trash"></i> Delete
-                        </button>
-                    </form>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="card app-card mx-3 mb-5 p-3">
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h5 class="fw-bold mb-0">Existing Thresholds</h5>
+            <input type="text" id="thresholdSearch" class="form-control search-input" placeholder="Search thresholds..." style="max-width: 240px;">
+        </div>
+        <div class="table-responsive app-table-container">
+            <table class="table table-hover mb-0" id="thresholdTable">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Store</th>
+                        <th>Ingredient</th>
+                        <th>Threshold</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for threshold in thresholds %}
+                    <tr data-store="{{ threshold.store_name }}" data-ingredient="{{ threshold.ingredient_name }}">
+                        <td>{{ threshold.store_name }}</td>
+                        <td>{{ threshold.ingredient_name }}</td>
+                        <td>
+                            <form method="POST" action="{{ url_for('update_threshold', id=threshold['id']) }}" class="d-inline-flex align-items-center gap-2">
+                                <input type="number" name="new_threshold" value="{{ threshold['threshold'] }}" step="0.1" class="form-control" style="width: 110px;">
+                                <button type="submit" class="btn app-btn-primary btn-sm">Save</button>
+                            </form>
+                        </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('delete_threshold', id=threshold['id']) }}" class="d-inline">
+                                <button type="submit" class="btn app-btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete this threshold?');">
+                                    Delete
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not thresholds %}
+                    <tr>
+                        <td colspan="4" class="text-center small-text">No thresholds set yet.</td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <!-- ✅ Include Select2 Library -->
@@ -138,6 +157,17 @@
             } else {
                 errorMessage.addClass("d-none");
             }
+        });
+
+        // ✅ Quick search
+        $("#thresholdSearch").on("input", function () {
+            const query = $(this).val().trim().toLowerCase();
+            $("#thresholdTable tbody tr").each(function () {
+                const store = ($(this).data("store") || "").toLowerCase();
+                const ingredient = ($(this).data("ingredient") || "").toLowerCase();
+                const match = store.includes(query) || ingredient.includes(query);
+                $(this).toggle(match);
+            });
         });
     });
 </script>

@@ -4,8 +4,12 @@
 <div class="container-fluid p-0 mt-5 pt-4">
 
     <!-- PAGE HEADER -->
-    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
-        <h2 class="fw-bold app-title">📅 Weekly Stock Take Records</h2>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Weekly Stocktake Records</h2>
+            <div class="small-text">Review weekly stocktakes and prepare stock out.</div>
+        </div>
+        <span class="badge-soft">{{ stocktakes|length if selected_store != "all" else 0 }} records</span>
     </div>
 
     <!-- FILTER CARD -->
@@ -51,7 +55,10 @@
         <input type="hidden" name="store_id" value="{{ selected_store }}">
         <input type="hidden" name="date" value="{{ selected_date }}">
 
-        <h5 class="fw-bold mb-3">Weekly Stock Levels</h5>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h5 class="fw-bold mb-0">Weekly Stock Levels</h5>
+            <input type="text" id="weeklySearch" class="form-control search-input" placeholder="Search ingredient..." style="max-width: 240px;">
+        </div>
 
         <div class="table-responsive app-table-container" style="max-height: 70vh; overflow-y:auto;">
             <table class="table app-table table-bordered align-middle mb-0">
@@ -119,59 +126,17 @@
 
 </div>
 
-<!-- STYLES -->
-<style>
-    body {
-        background: #F5F7FA;
-        font-family: Inter, -apple-system, BlinkMacSystemFont;
-    }
-
-    .app-card {
-        border-radius: 18px;
-        background: white;
-        border: 1px solid rgba(0,0,0,0.05);
-        box-shadow: 0 4px 16px rgba(0,0,0,0.07);
-    }
-
-    .app-btn-primary {
-        background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
-        color: #fff !important;
-        border-radius: 12px !important;
-        padding: 10px !important;
-        font-weight: 600;
-    }
-
-    .app-btn-danger {
-        background: linear-gradient(135deg, #ef4444, #dc2626) !important;
-        color: #fff !important;
-        border-radius: 12px !important;
-        padding: 12px !important;
-        font-weight: 600;
-    }
-
-    .small-text {
-        font-size: 0.85rem;
-        color: #6B7280;
-    }
-
-    .app-table-container {
-        border-radius: 14px;
-        overflow: hidden;
-    }
-
-    .app-thead {
-        background: #111827 !important;
-        color: white !important;
-    }
-
-    .app-table tbody tr {
-        background: white;
-    }
-
-    .app-table td, .app-table th {
-        vertical-align: middle !important;
-        text-align: center;
-    }
-</style>
+<script>
+const weeklySearch = document.getElementById("weeklySearch");
+if (weeklySearch) {
+    weeklySearch.addEventListener("input", () => {
+        const query = weeklySearch.value.trim().toLowerCase();
+        document.querySelectorAll("tbody tr").forEach(row => {
+            const ingredient = row.querySelector("td:nth-child(2)")?.textContent.trim().toLowerCase() || "";
+            row.style.display = ingredient.includes(query) ? "" : "none";
+        });
+    });
+}
+</script>
 
 {% endblock %}

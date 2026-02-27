@@ -5,8 +5,12 @@
 <div class="container-fluid p-0 mt-5 pt-4">
 
     <!-- PAGE HEADER -->
-    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
-        <h2 class="fw-bold app-title">📋 Stock Take Records</h2>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Daily Stocktake Records</h2>
+            <div class="small-text">Review submitted daily stocktakes.</div>
+        </div>
+        <span class="badge-soft">{{ stocktakes|length }} records</span>
     </div>
 
 
@@ -40,9 +44,7 @@
 
             <!-- Filter Button -->
             <div class="col-md-4 col-12">
-                <button type="submit" class="btn app-btn-primary w-100">
-                    Apply Filter
-                </button>
+                <button type="submit" class="btn app-btn-primary w-100">Apply Filter</button>
             </div>
 
         </form>
@@ -52,7 +54,10 @@
     <!-- RESULTS TABLE -->
     <div class="card app-card mx-3 mb-5 p-4">
 
-        <h5 class="fw-bold mb-3">Stocktake Records</h5>
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+            <h5 class="fw-bold mb-0">Stocktake Records</h5>
+            <input type="text" id="stocktakeSearch" class="form-control search-input" placeholder="Search store or ingredient..." style="max-width: 240px;">
+        </div>
 
         <div class="table-responsive app-table-container" style="max-height: 70vh; overflow-y: auto;">
             <table class="table app-table table-bordered align-middle mb-0">
@@ -83,53 +88,18 @@
 
 </div>
 
-
-<!-- STYLES -->
-<style>
-    body {
-        background: #F5F7FA;
-        font-family: Inter, -apple-system, BlinkMacSystemFont;
-    }
-
-    .app-card {
-        border-radius: 18px;
-        background: #ffffff;
-        border: 1px solid rgba(0,0,0,0.05);
-        box-shadow: 0 4px 16px rgba(0,0,0,0.07);
-    }
-
-    .app-btn-primary {
-        background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
-        color: white !important;
-        border-radius: 12px !important;
-        padding: 10px !important;
-        font-weight: 600 !important;
-    }
-
-    .small-text {
-        font-size: 0.85rem;
-        color: #6B7280;
-    }
-
-    .app-table-container {
-        border-radius: 14px;
-        overflow: hidden;
-        border: 1px solid rgba(0,0,0,0.05);
-    }
-
-    .app-thead {
-        background: #111827 !important;
-        color: white !important;
-    }
-
-    .app-table tbody tr {
-        background: white;
-    }
-
-    .app-table td, .app-table th {
-        vertical-align: middle !important;
-        text-align: center;
-    }
-</style>
+<script>
+const stocktakeSearch = document.getElementById("stocktakeSearch");
+if (stocktakeSearch) {
+    stocktakeSearch.addEventListener("input", () => {
+        const query = stocktakeSearch.value.trim().toLowerCase();
+        document.querySelectorAll("tbody tr").forEach(row => {
+            const store = row.querySelector("td:nth-child(2)")?.textContent.trim().toLowerCase() || "";
+            const ingredient = row.querySelector("td:nth-child(3)")?.textContent.trim().toLowerCase() || "";
+            row.style.display = (store.includes(query) || ingredient.includes(query)) ? "" : "none";
+        });
+    });
+}
+</script>
 
 {% endblock %}

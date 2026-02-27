@@ -4,13 +4,17 @@
 <div class="container-fluid p-0 mt-5 pt-4">
 
     <!-- HEADER -->
-    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
-        <h2 class="fw-bold app-title">Invoices — {{ store }}</h2>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Invoices — {{ store }}</h2>
+            <div class="small-text">Manage invoices for this store.</div>
+        </div>
         <a href="{{ url_for('invoice_page') }}" class="btn app-btn-secondary">← Back</a>
     </div>
 
     <!-- TOTAL UNPAID AMOUNT -->
-    <div class="mx-3 d-flex justify-content-end mb-3">
+    <div class="mx-3 d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <input type="text" id="invoiceSearch" class="form-control search-input" placeholder="Search invoice number..." style="max-width: 240px;">
         <div class="p-3 rounded-3 shadow-sm bg-white border d-inline-block text-end">
             <div class="fw-bold text-danger">
                 Unpaid Total: ${{ '%.2f'|format(total_unpaid_amount) }}
@@ -29,7 +33,7 @@
             {% set items = items_by_invoice.get(invoice[0], []) %}
             {% set total_selling = items | sum(attribute='total_selling_inc_gst') %}
 
-            <div class="invoice-card mb-3" onclick="toggleCard(this)">
+            <div class="invoice-card mb-3" data-invoice="{{ invoice[0] }}" onclick="toggleCard(this)">
                 <div class="p-3 d-flex justify-content-between align-items-center">
                     <div>
                         <div class="fw-bold">Invoice #{{ invoice[0] }}</div>
@@ -101,7 +105,7 @@
             {% set items = items_by_invoice.get(invoice[0], []) %}
             {% set total_selling = items | sum(attribute='total_selling_inc_gst') %}
 
-            <div class="invoice-table-card mb-3 p-3"
+            <div class="invoice-table-card mb-3 p-3" data-invoice="{{ invoice[0] }}"
                  onclick="toggleCard(this)">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
@@ -183,7 +187,7 @@
             {% set items = items_by_invoice.get(invoice[0], []) %}
             {% set total_selling = items | sum(attribute='total_selling_inc_gst') %}
 
-            <div class="invoice-card mb-3" onclick="toggleCard(this)">
+            <div class="invoice-card mb-3" data-invoice="{{ invoice[0] }}" onclick="toggleCard(this)">
                 <div class="p-3 d-flex justify-content-between align-items-center">
                     <div>
                         <div class="fw-bold">Invoice #{{ invoice[0] }}</div>
@@ -248,7 +252,7 @@
             {% set items = items_by_invoice.get(invoice[0], []) %}
             {% set total_selling = items | sum(attribute='total_selling_inc_gst') %}
 
-            <div class="invoice-table-card mb-3 p-3"
+            <div class="invoice-table-card mb-3 p-3" data-invoice="{{ invoice[0] }}"
                  onclick="toggleCard(this)">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
@@ -413,6 +417,17 @@ document.getElementById("sendInvoiceForm").addEventListener("submit", function (
     .then(r => r.json())
     .then(data => alert(data.message));
 });
+
+const invoiceSearch = document.getElementById("invoiceSearch");
+if (invoiceSearch) {
+    invoiceSearch.addEventListener("input", () => {
+        const query = invoiceSearch.value.trim().toLowerCase();
+        document.querySelectorAll(".invoice-card, .invoice-table-card").forEach(card => {
+            const invoice = (card.dataset.invoice || "").toLowerCase();
+            card.style.display = invoice.includes(query) ? "" : "none";
+        });
+    });
+}
 </script>
 
 <style>
@@ -435,40 +450,6 @@ document.getElementById("sendInvoiceForm").addEventListener("submit", function (
 @keyframes fadeIn {
     from { opacity:0; transform:translateY(-3px); }
     to   { opacity:1; transform:translateY(0); }
-}
-.app-card {
-    border-radius: 18px;
-    background: #ffffff;
-    border: 1px solid rgba(0,0,0,0.05);
-    box-shadow: 0 4px 16px rgba(0,0,0,0.07);
-}
-.app-btn-primary {
-    background: linear-gradient(135deg, #6366F1, #4F46E5) !important;
-    color: white !important;
-    border-radius: 12px !important;
-}
-.app-btn-secondary {
-    background: #EEF1F5 !important;
-    color: #374151 !important;
-    border-radius: 12px !important;
-}
-.app-btn-warning {
-    background: #FBBF24 !important;
-    color: #111827 !important;
-    border-radius: 12px !important;
-}
-.app-btn-danger {
-    background: #EF4444 !important;
-    color: #ffffff !important;
-    border-radius: 12px !important;
-}
-.small-text {
-    font-size: 0.85rem;
-    color: #6B7280;
-}
-body {
-    background: #F5F7FA;
-    font-family: Inter, -apple-system, BlinkMacSystemFont;
 }
 </style>
 

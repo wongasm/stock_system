@@ -1,51 +1,81 @@
 {% extends "navbar.html" %}
 
 {% block content %}
-<div class="container mt-4">
-    <h2 class="mb-3">Need to Buy</h2>
+<div class="container-fluid p-0 mt-5 pt-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Need to Buy</h2>
+            <div class="small-text">Ingredients below threshold.</div>
+        </div>
+        <span class="badge-soft">{{ items_to_buy|length if items_to_buy else 0 }} items</span>
+    </div>
 
-    <!-- ✅ Supplier Filter -->
-    <form method="GET" action="{{ url_for('need_to_buy') }}" class="mb-3">
-        <label for="supplier" class="form-label">Filter by Supplier:</label>
-        <select name="supplier" id="supplier" class="form-select" onchange="this.form.submit()">
-            <option value="All Suppliers" {% if selected_supplier == "" or selected_supplier == "All Suppliers" %}selected{% endif %}>
-                All Suppliers
-            </option>
-            {% for supplier in suppliers %}
-            <option value="{{ supplier }}" {% if selected_supplier == supplier %}selected{% endif %}>
-                {{ supplier }}  <!-- ✅ Display only supplier name -->
-            </option>
-            {% endfor %}
-        </select>
-    </form>
+    <div class="card app-card mx-3 mb-4 p-3">
+        <form method="GET" action="{{ url_for('need_to_buy') }}" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label for="supplier" class="form-label small-text fw-semibold">Filter by Supplier</label>
+                <select name="supplier" id="supplier" class="form-select" onchange="this.form.submit()">
+                    <option value="All Suppliers" {% if selected_supplier == "" or selected_supplier == "All Suppliers" %}selected{% endif %}>
+                        All Suppliers
+                    </option>
+                    {% for supplier in suppliers %}
+                    <option value="{{ supplier }}" {% if selected_supplier == supplier %}selected{% endif %}>
+                        {{ supplier }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label small-text fw-semibold">Quick Search</label>
+                <input type="text" id="needToBuySearch" class="form-control search-input" placeholder="Search ingredient...">
+            </div>
+        </form>
+    </div>
 
     {% if items_to_buy %}
-    <table class="table table-bordered table-striped">
-        <thead class="table-dark">
-            <tr>
-                <th>Ingredient</th>
-                <th>Current Stock</th>
-                <th>Threshold</th>
-                <th>Need to Buy</th>
-                <th>Supplier</th> <!-- ✅ Corrected Supplier Column -->
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in items_to_buy %}
-            <tr class="table-danger"> <!-- ✅ Highlights rows where stock is needed -->
-                <td>{{ item.name }}</td>
-                <td>{{ "%.1f"|format(item.current_stock) }}</td>
-                <td>{{ "%.1f"|format(item.threshold) }}</td>
-                <td><strong>{{ "%.1f"|format(item.need_to_buy) }}</strong></td>
-                <td>{{ item.supplier }}</td> <!-- ✅ Display only supplier name -->
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="card app-card mx-3 mb-5 p-3">
+        <div class="table-responsive app-table-container">
+            <table class="table table-hover mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Ingredient</th>
+                        <th>Current Stock</th>
+                        <th>Threshold</th>
+                        <th>Need to Buy</th>
+                        <th>Supplier</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in items_to_buy %}
+                    <tr>
+                        <td class="fw-semibold">{{ item.name }}</td>
+                        <td>{{ "%.1f"|format(item.current_stock) }}</td>
+                        <td>{{ "%.1f"|format(item.threshold) }}</td>
+                        <td class="text-danger fw-bold">{{ "%.1f"|format(item.need_to_buy) }}</td>
+                        <td>{{ item.supplier }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
     {% else %}
-    <div class="alert alert-success">
+    <div class="alert alert-success mx-3 mb-5">
         <strong>All ingredients are sufficiently stocked!</strong>
     </div>
     {% endif %}
 </div>
+
+<script>
+const needToBuySearch = document.getElementById("needToBuySearch");
+if (needToBuySearch) {
+    needToBuySearch.addEventListener("input", () => {
+        const query = needToBuySearch.value.trim().toLowerCase();
+        document.querySelectorAll("tbody tr").forEach(row => {
+            const name = row.querySelector("td")?.textContent.trim().toLowerCase() || "";
+            row.style.display = name.includes(query) ? "" : "none";
+        });
+    });
+}
+</script>
 {% endblock %}

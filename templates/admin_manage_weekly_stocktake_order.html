@@ -1,57 +1,77 @@
 {% extends "navbar.html" %}
 
 {% block content %}
-<div class="container">
-    <h2>Manage Weekly Stocktake Order</h2>
+<div class="container-fluid p-0 mt-5 pt-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Weekly Stocktake Order</h2>
+            <div class="small-text">Choose a store, then drag ingredients between lists to customize weekly stocktake.</div>
+        </div>
+        <span class="badge-soft">{{ enabled_ingredients|length }} enabled</span>
+    </div>
 
-    <p>Choose a store, then drag ingredients between lists and reorder the weekly stocktake list.</p>
-
-    <div class="row mb-3">
-        <div class="col-md-6">
-            <label class="form-label">Select Store</label>
-            <select id="storeSelect" class="form-select">
-                {% for store in stores %}
-                    <option value="{{ store.id }}" {% if store.id|string == selected_store %}selected{% endif %}>
-                        {{ store.username }}
-                    </option>
-                {% endfor %}
-            </select>
+    <div class="card app-card mx-3 mb-4 p-3">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-6">
+                <label class="form-label small-text fw-semibold">Select Store</label>
+                <select id="storeSelect" class="form-select">
+                    {% for store in stores %}
+                        <option value="{{ store.id }}" {% if store.id|string == selected_store %}selected{% endif %}>
+                            {{ store.username }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
     </div>
 
-    <div class="row g-3">
+    <div class="row g-3 px-3">
         <div class="col-md-6">
-            <h5>Included in Weekly Stocktake</h5>
-            <ul id="weeklyStocktakeList" class="list-group min-vh-25">
-                {% for ingredient in enabled_ingredients %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
-                        <span class="item-name">{{ ingredient.name }}</span>
-                        <div class="d-flex align-items-center gap-2">
-                            <button type="button" class="btn btn-sm btn-outline-danger move-item" data-action="remove">-</button>
-                            <span class="drag-handle">&#x2630;</span>
-                        </div>
-                    </li>
-                {% endfor %}
-            </ul>
+            <div class="card app-card p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="fw-bold mb-0">Included in Weekly Stocktake</h5>
+                    <span class="badge-soft">{{ enabled_ingredients|length }}</span>
+                </div>
+                <input type="text" id="weeklyEnabledSearch" class="form-control search-input mb-2" placeholder="Search enabled...">
+                <ul id="weeklyStocktakeList" class="list-group list-group-flush min-vh-25">
+                    {% for ingredient in enabled_ingredients %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
+                            <span class="item-name fw-semibold">{{ ingredient.name }}</span>
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-danger move-item" data-action="remove">-</button>
+                                <span class="drag-handle">≡</span>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
         </div>
 
         <div class="col-md-6">
-            <h5>Available Ingredients</h5>
-            <ul id="weeklyStocktakeAvailable" class="list-group min-vh-25">
-                {% for ingredient in disabled_ingredients %}
-                    <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
-                        <span class="item-name">{{ ingredient.name }}</span>
-                        <div class="d-flex align-items-center gap-2">
-                            <button type="button" class="btn btn-sm btn-outline-success move-item" data-action="add">+</button>
-                            <span class="drag-handle">&#x2630;</span>
-                        </div>
-                    </li>
-                {% endfor %}
-            </ul>
+            <div class="card app-card p-3 h-100">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h5 class="fw-bold mb-0">Available Ingredients</h5>
+                    <span class="badge-soft">{{ disabled_ingredients|length }}</span>
+                </div>
+                <input type="text" id="weeklyAvailableSearch" class="form-control search-input mb-2" placeholder="Search available...">
+                <ul id="weeklyStocktakeAvailable" class="list-group list-group-flush min-vh-25">
+                    {% for ingredient in disabled_ingredients %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
+                            <span class="item-name fw-semibold">{{ ingredient.name }}</span>
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-success move-item" data-action="add">+</button>
+                                <span class="drag-handle">≡</span>
+                            </div>
+                        </li>
+                    {% endfor %}
+                </ul>
+            </div>
         </div>
     </div>
 
-    <button id="saveWeeklyOrder" class="btn btn-success mt-3">Save Changes</button>
+    <div class="px-3">
+        <button id="saveWeeklyOrder" class="btn app-btn-primary app-btn mt-3">Save Changes</button>
+    </div>
 </div>
 
 <!-- ✅ JavaScript for Drag-and-Drop -->
@@ -139,6 +159,22 @@
                 }
             });
         });
+
+        function bindSearch(inputId, listId) {
+            const input = document.getElementById(inputId);
+            const listEl = document.getElementById(listId);
+            if (!input || !listEl) return;
+            input.addEventListener("input", () => {
+                const query = input.value.trim().toLowerCase();
+                listEl.querySelectorAll("li").forEach(item => {
+                    const name = item.querySelector(".item-name")?.textContent.trim().toLowerCase() || "";
+                    item.style.display = name.includes(query) ? "flex" : "none";
+                });
+            });
+        }
+
+        bindSearch("weeklyEnabledSearch", "weeklyStocktakeList");
+        bindSearch("weeklyAvailableSearch", "weeklyStocktakeAvailable");
     });
 </script>
 

@@ -1,21 +1,31 @@
 {% extends "navbar.html" %}
 
 {% block content %}
-<div class="container">
-    <h2>Manage Stocktake Order</h2>
+<div class="container-fluid p-0 mt-5 pt-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Daily Stocktake Order</h2>
+            <div class="small-text">Drag and drop ingredients to set the daily stocktake order.</div>
+        </div>
+        <span class="badge-soft">{{ ingredients|length }} items</span>
+    </div>
 
-    <p>Drag and drop the ingredients to set their display order for daily stocktake.</p>
+    <div class="card app-card mx-3 mb-3 p-3">
+        <input type="text" id="stocktakeSearch" class="form-control search-input" placeholder="Search ingredients...">
+    </div>
 
-    <ul id="stocktakeList" class="list-group">
-        {% for ingredient in ingredients %}
-            <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
-                {{ ingredient.name }}
-                <span class="drag-handle">&#x2630;</span>
-            </li>
-        {% endfor %}
-    </ul>
+    <div class="card app-card mx-3 mb-5 p-3">
+        <ul id="stocktakeList" class="list-group list-group-flush">
+            {% for ingredient in ingredients %}
+                <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
+                    <span class="fw-semibold">{{ ingredient.name }}</span>
+                    <span class="drag-handle">≡</span>
+                </li>
+            {% endfor %}
+        </ul>
 
-    <button id="saveOrder" class="btn btn-success mt-3">Save Order</button>
+        <button id="saveOrder" class="btn app-btn-primary app-btn mt-3">Save Order</button>
+    </div>
 </div>
 
 <!-- ✅ JavaScript for Drag-and-Drop -->
@@ -23,6 +33,7 @@
     document.addEventListener("DOMContentLoaded", function () {
         const list = document.getElementById("stocktakeList");
         const saveButton = document.getElementById("saveOrder");
+        const searchInput = document.getElementById("stocktakeSearch");
 
         new Sortable(list, {
             animation: 150,
@@ -55,6 +66,16 @@
                 }
             });
         });
+
+        if (searchInput) {
+            searchInput.addEventListener("input", () => {
+                const query = searchInput.value.trim().toLowerCase();
+                document.querySelectorAll("#stocktakeList li").forEach(item => {
+                    const name = item.textContent.trim().toLowerCase();
+                    item.style.display = name.includes(query) ? "flex" : "none";
+                });
+            });
+        }
     });
 </script>
 

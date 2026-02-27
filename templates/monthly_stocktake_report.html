@@ -1,13 +1,19 @@
 {% extends "navbar.html" %}
 
 {% block content %}
-<div class="container mt-4">
-    <h2 class="mb-3">Stocktake Variance Report</h2>
+<div class="container-fluid p-0 mt-5 pt-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Stocktake Variance Report</h2>
+            <div class="small-text">Review monthly stocktake variance.</div>
+        </div>
+        <span class="badge-soft">{{ records|length if records else 0 }} entries</span>
+    </div>
 
     <!-- Date Range Selector -->
-    <form method="get" class="mb-4 row g-3">
+    <form method="get" class="mb-4 row g-3 mx-3">
         <div class="col-md-4">
-            <label class="form-label">Start Date</label>
+            <label class="form-label small-text fw-semibold">Start Date</label>
             <input
                 type="date"
                 name="start_date"
@@ -16,7 +22,7 @@
             >
         </div>
         <div class="col-md-4">
-            <label class="form-label">End Date</label>
+            <label class="form-label small-text fw-semibold">End Date</label>
             <input
                 type="date"
                 name="end_date"
@@ -25,7 +31,7 @@
             >
         </div>
         <div class="col-md-4 d-flex align-items-end">
-            <button class="btn btn-primary w-100">
+            <button class="btn app-btn-primary w-100">
                 Apply
             </button>
         </div>
@@ -33,7 +39,7 @@
 
     {% if records %}
     <!-- Summary -->
-    <div class="row mb-4">
+    <div class="row mb-4 mx-3">
         <div class="col-md-4">
             <div class="alert alert-success">
                 <strong>Total Gain</strong><br>
@@ -55,9 +61,13 @@
     </div>
 
     <!-- Variance Table -->
-    <div class="table-responsive">
-        <table class="table table-bordered table-striped align-middle">
-            <thead class="table-dark">
+    <div class="card app-card mx-3 mb-5 p-3">
+        <div class="mb-3">
+            <input type="text" id="varianceSearch" class="form-control search-input" placeholder="Search ingredient...">
+        </div>
+        <div class="table-responsive app-table-container">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="app-thead">
                 <tr>
                     <th>Date</th>
                     <th>Ingredient</th>
@@ -94,11 +104,25 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
     {% else %}
-        <div class="alert alert-info">
+        <div class="alert alert-info mx-3">
             No stocktake data found for the selected date range.
         </div>
     {% endif %}
 </div>
+
+<script>
+const varianceSearch = document.getElementById("varianceSearch");
+if (varianceSearch) {
+    varianceSearch.addEventListener("input", () => {
+        const query = varianceSearch.value.trim().toLowerCase();
+        document.querySelectorAll("tbody tr").forEach(row => {
+            const ingredient = row.querySelector("td:nth-child(2)")?.textContent.trim().toLowerCase() || "";
+            row.style.display = ingredient.includes(query) ? "" : "none";
+        });
+    });
+}
+</script>
 {% endblock %}
