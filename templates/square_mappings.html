@@ -52,14 +52,25 @@
                                 <input type="hidden" name="store_name" value="{{ selected_store }}">
                                 <input type="hidden" name="catalog_object_id" value="{{ item.catalog_object_id }}">
                                 <input type="hidden" name="item_name" value="{{ item.item_name }}">
-                                <select name="recipe_id" class="form-select form-select-sm" required>
+                                <select name="recipe_id" class="form-select form-select-sm recipe-select" required>
                                     <option value="">Select Recipe</option>
                                     {% for recipe in recipes %}
-                                        <option value="{{ recipe.id }}" {% if item.recipe_id == recipe.id %}selected{% endif %}>
+                                        <option value="{{ recipe.id }}"
+                                            {% if item.recipe_id == recipe.id %}
+                                                selected
+                                            {% elif not item.recipe_id and item.suggested_recipe_id == recipe.id %}
+                                                selected
+                                            {% endif %}
+                                        >
                                             {{ recipe.name }}
                                         </option>
                                     {% endfor %}
                                 </select>
+                                {% if not item.recipe_id and item.suggested_recipe_id %}
+                                    <div class="small-text text-muted mt-1">
+                                        Suggested: {{ item.suggested_recipe_name }} ({{ item.suggested_ratio }}%)
+                                    </div>
+                                {% endif %}
                         </td>
                         <td style="width:140px;">
                                 <input type="number" step="0.01" min="0" name="multiplier" value="{{ item.multiplier }}" class="form-control form-control-sm">
@@ -87,6 +98,18 @@
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    if (window.$ && $(".recipe-select").select2) {
+        $(".recipe-select").select2({
+            width: "100%",
+            placeholder: "Select Recipe",
+            minimumResultsForSearch: 0
+        });
+    }
+});
+</script>
 
 <style>
 .app-card {
@@ -117,6 +140,19 @@
 .text-monospace {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size: 0.85rem;
+}
+.select2-container--default .select2-selection--single {
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    padding: 4px 8px;
+}
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 24px;
+    color: #0f172a;
+}
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 32px;
 }
 </style>
 

@@ -23,6 +23,8 @@ from pathlib import Path
 from square_helpers import ITEM_CATEGORY_MAP
 from freezer_pack_helpers import calculate_ingredients_for_freezer_pack
 import traceback
+import re
+from difflib import SequenceMatcher
 
 # ⛑ Force .env from current file directory
 env_path = Path(__file__).parent / ".env"
@@ -77,6 +79,27 @@ def parse_square_datetime(value):
         return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
     except ValueError:
         return None
+
+def normalize_label(value):
+    if not value:
+        return ""
+    cleaned = re.sub(r"[^a-z0-9]+", " ", str(value).lower())
+    return " ".join(cleaned.split())
+
+def best_recipe_match(item_name, recipe_choices):
+    needle = normalize_label(item_name)
+    if not needle:
+        return None, 0.0
+    best_id = None
+    best_ratio = 0.0
+    for recipe_id, recipe_norm in recipe_choices:
+        if not recipe_norm:
+            continue
+        ratio = SequenceMatcher(None, needle, recipe_norm).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_id = recipe_id
+    return best_id, best_ratio
 
 def apply_square_mappings(store_name, start_dt=None, end_dt=None):
     query = SquareOrderLine.query.filter_by(store_name=store_name)
@@ -3507,8 +3530,12 @@ def square_mappings():
         flash("Missing catalog object ID or recipe.", "danger")
 
     recipes = []
+    recipe_name_map = {}
+    recipe_choices = []
     for recipe in SalesRecipe.query.order_by(SalesRecipe.name.asc()).all():
         recipes.append({"id": recipe.id, "name": recipe.name})
+        recipe_name_map[recipe.id] = recipe.name
+        recipe_choices.append((recipe.id, normalize_label(recipe.name)))
 
     line_items = []
     if selected_store:
@@ -3523,14 +3550,29 @@ def square_mappings():
         mappings = SquareItemSalesRecipe.query.filter_by(store_name=selected_store).all()
         mapping_map = {m.catalog_object_id: m for m in mappings}
 
+        suggest_threshold = 0.75
         for row in raw_items:
             mapping = mapping_map.get(row.catalog_object_id)
+            current_recipe_id = mapping.sales_recipe_id if mapping else None
+            suggested_recipe_id = None
+            suggested_ratio = None
+
+            if not current_recipe_id:
+                suggested_recipe_id, ratio = best_recipe_match(row.item_name, recipe_choices)
+                if suggested_recipe_id and ratio >= suggest_threshold:
+                    suggested_ratio = ratio
+                else:
+                    suggested_recipe_id = None
+
             line_items.append({
                 "catalog_object_id": row.catalog_object_id,
                 "item_name": row.item_name,
-                "recipe_id": mapping.sales_recipe_id if mapping else None,
+                "recipe_id": current_recipe_id,
                 "multiplier": float(mapping.multiplier) if mapping and mapping.multiplier is not None else 1.0,
-                "mapped": bool(mapping)
+                "mapped": bool(mapping),
+                "suggested_recipe_id": suggested_recipe_id,
+                "suggested_recipe_name": recipe_name_map.get(suggested_recipe_id) if suggested_recipe_id else None,
+                "suggested_ratio": round(suggested_ratio * 100, 0) if suggested_ratio else None
             })
 
     return render_template(
