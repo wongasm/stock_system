@@ -62,7 +62,7 @@
                             {{ item.item_name or "—" }}
                         </td>
                         <td>
-                                <select name="recipe_id[]" class="form-select form-select-sm recipe-select" required>
+                                <select name="recipe_id[]" class="form-select form-select-sm recipe-select">
                                     <option value="">Select Recipe</option>
                                     {% for recipe in recipes %}
                                         <option value="{{ recipe.id }}"
@@ -116,6 +116,23 @@ document.addEventListener("DOMContentLoaded", () => {
             width: "100%",
             placeholder: "Select Recipe",
             minimumResultsForSearch: 0
+        });
+    }
+
+    const mappingsForm = document.querySelector("form.mb-3")?.closest("form");
+    if (mappingsForm) {
+        mappingsForm.addEventListener("submit", (event) => {
+            const submitter = event.submitter;
+            if (!submitter) return;
+            const action = submitter.value || "";
+            if (action.startsWith("save_one_")) {
+                const row = submitter.closest("tr");
+                const select = row ? row.querySelector("select.recipe-select") : null;
+                if (!select || !select.value) {
+                    event.preventDefault();
+                    alert("Please select a recipe before saving this row.");
+                }
+            }
         });
     }
 });
