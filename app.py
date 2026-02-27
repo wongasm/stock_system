@@ -3496,17 +3496,36 @@ def square_mappings():
             flash(f"Applied mappings. Ledger entries: {applied['created']}.", "success")
             return redirect(url_for("square_mappings", store_name=store_name))
 
-        catalog_object_id = request.form.get("catalog_object_id")
-        recipe_id = request.form.get("recipe_id")
-        multiplier_raw = request.form.get("multiplier", "1")
+        if action and action.startswith("save_one_"):
+            try:
+                save_index = int(action.split("_")[-1])
+            except (ValueError, IndexError):
+                save_index = None
+        else:
+            save_index = None
 
-        if catalog_object_id and recipe_id:
+        catalog_object_ids = request.form.getlist("catalog_object_id[]")
+        recipe_ids = request.form.getlist("recipe_id[]")
+        multipliers = request.form.getlist("multiplier[]")
+        item_names = request.form.getlist("item_name[]")
+
+        def upsert_mapping(idx):
+            if idx is None or idx < 0:
+                return False
+            if idx >= len(catalog_object_ids) or idx >= len(recipe_ids):
+                return False
+            catalog_object_id = catalog_object_ids[idx]
+            recipe_id = recipe_ids[idx]
+            if not catalog_object_id or not recipe_id:
+                return False
+
+            multiplier_raw = multipliers[idx] if idx < len(multipliers) else "1"
             try:
                 multiplier = Decimal(str(multiplier_raw))
             except (InvalidOperation, ValueError):
                 multiplier = Decimal("1")
 
-            item_name = request.form.get("item_name")
+            item_name = item_names[idx] if idx < len(item_names) else None
             mapping = SquareItemSalesRecipe.query.filter_by(
                 store_name=store_name,
                 catalog_object_id=catalog_object_id
@@ -3523,8 +3542,23 @@ def square_mappings():
             mapping.item_name = item_name
             mapping.multiplier = multiplier
             mapping.active = True
+            return True
+
+        if action == "bulk_save":
+            updated = 0
+            for idx in range(min(len(catalog_object_ids), len(recipe_ids))):
+                if upsert_mapping(idx):
+                    updated += 1
             db.session.commit()
-            flash("Mapping saved.", "success")
+            flash(f"Bulk save complete. Updated {updated} mapping(s).", "success")
+            return redirect(url_for("square_mappings", store_name=store_name))
+
+        if save_index is not None:
+            if upsert_mapping(save_index):
+                db.session.commit()
+                flash("Mapping saved.", "success")
+                return redirect(url_for("square_mappings", store_name=store_name))
+            flash("Missing catalog object ID or recipe.", "danger")
             return redirect(url_for("square_mappings", store_name=store_name))
 
         flash("Missing catalog object ID or recipe.", "danger")
