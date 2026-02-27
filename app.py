@@ -1318,12 +1318,22 @@ def delete_sales_recipe(recipe_id):
         return jsonify({"success": False, "message": "Recipe not found."})
 
     try:
+        mappings_deleted = SquareItemSalesRecipe.query.filter_by(
+            sales_recipe_id=recipe_id
+        ).delete(synchronize_session=False)
         SalesRecipeIngredient.query.filter_by(
             sales_recipe_id=recipe_id
         ).delete(synchronize_session=False)
-        SalesRecipe.query.filter_by(id=recipe_id).delete(synchronize_session=False)
+        recipes_deleted = SalesRecipe.query.filter_by(
+            id=recipe_id
+        ).delete(synchronize_session=False)
         db.session.commit()
-        return jsonify({"success": True, "message": "Sales recipe deleted."})
+        if not recipes_deleted:
+            return jsonify({"success": False, "message": "Recipe not found."})
+        message = "Sales recipe deleted."
+        if mappings_deleted:
+            message += f" Removed {mappings_deleted} Square mapping(s)."
+        return jsonify({"success": True, "message": message})
     except OperationalError as exc:
         db.session.rollback()
         if "Lock wait timeout exceeded" in str(exc):
