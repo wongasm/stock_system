@@ -58,7 +58,7 @@
                                     <label class="form-label fw-semibold small-text">Grams Used</label>
                                     <div class="input-group">
                                         <input type="number" name="grams_used[]" class="form-control grams-input"
-                                               placeholder="Enter grams" required>
+                                               placeholder="Enter grams" step="0.001" min="0" inputmode="decimal" required>
                                         <span class="input-group-text">g</span>
                                     </div>
                                 </div>
@@ -160,7 +160,7 @@ function addIngredientField() {
                 <label class="form-label fw-semibold small-text">Grams Used</label>
                 <div class="input-group">
                     <input type="number" name="grams_used[]" class="form-control grams-input"
-                        placeholder="Enter grams" required>
+                        placeholder="Enter grams" step="0.001" min="0" inputmode="decimal" required>
                     <span class="input-group-text">g</span>
                 </div>
             </div>
