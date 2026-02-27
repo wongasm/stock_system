@@ -48,7 +48,6 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 
 # Initialize database
 db.init_app(app)
-db = SQLAlchemy(app)
 migrate = Migrate(app, db)
 
 app.config["MAIL_SERVER"] = "smtp.gmail.com"  # Change for other providers (Outlook, Yahoo, etc.)
