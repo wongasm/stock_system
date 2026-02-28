@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def fetch_sales_for_store(store_name, start_date=None, end_date=None, verbose=True):
+def fetch_sales_for_store(store_name, start_date=None, end_date=None, verbose=True, page_limit=500):
     # Convert store name to ENV key format (e.g., "Glen Waverley" → "GLEN_WAVERLEY")
     env_key = store_name.upper().replace(" ", "_")
 
@@ -38,8 +38,12 @@ def fetch_sales_for_store(store_name, start_date=None, end_date=None, verbose=Tr
         print(f"📅 Fetching orders for {store_name} from {start_date} to {end_date}")
 
     try:
-        result = client.orders.search_orders(
-            body={
+        orders = []
+        cursor = None
+        page = 1
+
+        while True:
+            body = {
                 "location_ids": [location_id],
                 "query": {
                     "filter": {
@@ -59,17 +63,31 @@ def fetch_sales_for_store(store_name, start_date=None, end_date=None, verbose=Tr
                     }
                 }
             }
-        )
 
-        if result.is_success():
-            orders = result.body.get("orders", [])
-            if verbose:
-                print(f"✅ {len(orders)} orders fetched.")
-            return orders
-        else:
-            if verbose:
-                print(f"❌ Error fetching orders for {store_name}:", result.errors)
-            return []
+            if page_limit:
+                body["limit"] = page_limit
+            if cursor:
+                body["cursor"] = cursor
+
+            result = client.orders.search_orders(body=body)
+
+            if result.is_success():
+                batch = result.body.get("orders", [])
+                orders.extend(batch)
+                cursor = result.body.get("cursor")
+                if verbose:
+                    print(f"✅ Page {page}: {len(batch)} orders fetched.")
+                if not cursor:
+                    break
+                page += 1
+            else:
+                if verbose:
+                    print(f"❌ Error fetching orders for {store_name}:", result.errors)
+                break
+
+        if verbose:
+            print(f"✅ Total orders fetched: {len(orders)}")
+        return orders
 
     except Exception as e:
         if verbose:
