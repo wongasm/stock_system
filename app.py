@@ -125,6 +125,7 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
     recipe_cache = {}
     ingredient_cache = {}
     seen_ledger = set()
+    ledger_rows = []
 
     try:
         with db.session.no_autoflush:
@@ -207,29 +208,31 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
                         continue
                     seen_ledger.add(ledger_key)
 
-                    existing = InventoryLedger.query.filter_by(
-                        source_type="SQUARE_LINE",
-                        source_id=source_id,
-                        ingredient_id=ingredient.id
-                    ).first()
-                    if existing:
-                        continue
-
                     grams_needed = grams_used * quantity * multiplier
                     units_needed = grams_needed / grams_per_unit
                     qty_delta = sign * units_needed
 
-                    ledger = InventoryLedger(
-                        store_id=store_user.id,
-                        ingredient_id=ingredient.id,
-                        qty_delta=qty_delta,
-                        reason="REFUND" if line.is_return else "SALE",
-                        source_type="SQUARE_LINE",
-                        source_id=source_id,
-                        occurred_at=line.created_at or datetime.utcnow()
-                    )
-                    db.session.add(ledger)
-                    created += 1
+                    ledger_rows.append({
+                        "store_id": store_user.id,
+                        "ingredient_id": ingredient.id,
+                        "qty_delta": qty_delta,
+                        "reason": "REFUND" if line.is_return else "SALE",
+                        "source_type": "SQUARE_LINE",
+                        "source_id": source_id,
+                        "occurred_at": line.created_at or datetime.utcnow(),
+                        "created_at": datetime.utcnow()
+                    })
+
+        if ledger_rows:
+            result = db.session.execute(
+                text(
+                    "INSERT IGNORE INTO inventory_ledger "
+                    "(store_id, ingredient_id, qty_delta, reason, source_type, source_id, occurred_at, created_at) "
+                    "VALUES (:store_id, :ingredient_id, :qty_delta, :reason, :source_type, :source_id, :occurred_at, :created_at)"
+                ),
+                ledger_rows
+            )
+            created = result.rowcount or 0
 
         db.session.commit()
         return {"created": created, "unmapped": sorted(list(unmapped))}
@@ -245,7 +248,8 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
         try:
             if not db.session.is_active:
                 db.session.rollback()
-            db.session.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": lock_name})
+            with db.engine.connect() as conn:
+                conn.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": lock_name})
         except SQLAlchemyError:
             pass
 
