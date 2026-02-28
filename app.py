@@ -124,6 +124,7 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
     sales_recipe_cache = {}
     recipe_cache = {}
     ingredient_cache = {}
+    seen_ledger = set()
 
     try:
         with db.session.no_autoflush:
@@ -177,17 +178,34 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
 
                 sign = Decimal("1") if line.is_return else Decimal("-1")
 
+                # Aggregate grams per ingredient (prevents duplicates)
+                aggregated = {}
                 for ri in recipe_ingredients:
-                    ingredient = ingredient_cache.get(ri.ingredient_id)
+                    try:
+                        grams_used = Decimal(str(ri.grams_used or 0))
+                    except (InvalidOperation, ValueError):
+                        continue
+                    aggregated[ri.ingredient_id] = aggregated.get(ri.ingredient_id, Decimal("0")) + grams_used
+
+                for ingredient_id, grams_used in aggregated.items():
+                    if grams_used == 0:
+                        continue
+
+                    ingredient = ingredient_cache.get(ingredient_id)
                     if not ingredient:
-                        ingredient = Ingredient.query.get(ri.ingredient_id)
-                        ingredient_cache[ri.ingredient_id] = ingredient
+                        ingredient = Ingredient.query.get(ingredient_id)
+                        ingredient_cache[ingredient_id] = ingredient
                     if not ingredient:
                         continue
 
                     grams_per_unit = Decimal(str(ingredient.grams_per_unit or 0))
                     if grams_per_unit == 0:
                         continue
+
+                    ledger_key = (source_id, ingredient.id)
+                    if ledger_key in seen_ledger:
+                        continue
+                    seen_ledger.add(ledger_key)
 
                     existing = InventoryLedger.query.filter_by(
                         source_type="SQUARE_LINE",
@@ -197,7 +215,7 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
                     if existing:
                         continue
 
-                    grams_needed = Decimal(str(ri.grams_used)) * quantity * multiplier
+                    grams_needed = grams_used * quantity * multiplier
                     units_needed = grams_needed / grams_per_unit
                     qty_delta = sign * units_needed
 
@@ -220,8 +238,16 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
         if "Lock wait timeout exceeded" in str(exc):
             return {"created": 0, "unmapped": sorted(list(unmapped)), "error": "Database is busy. Please try again."}
         return {"created": 0, "unmapped": sorted(list(unmapped)), "error": "Database error. Please try again."}
+    except SQLAlchemyError:
+        db.session.rollback()
+        return {"created": 0, "unmapped": sorted(list(unmapped)), "error": "Database error. Please try again."}
     finally:
-        db.session.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": lock_name})
+        try:
+            if not db.session.is_active:
+                db.session.rollback()
+            db.session.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": lock_name})
+        except SQLAlchemyError:
+            pass
 
 def sync_square_orders(store_name, start_utc, end_utc, verbose=False):
     lock_name = f"square_sync_{store_name}"
