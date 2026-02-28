@@ -14,6 +14,16 @@
         </form>
     </div>
 
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="mx-3 mb-3">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} mb-2">{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
     <div class="card app-card mb-4 mx-3 p-3">
         <form method="GET" action="{{ url_for('square_mappings') }}" class="row g-3 align-items-end">
             <div class="col-md-4 col-12">
