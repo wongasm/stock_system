@@ -1742,6 +1742,8 @@ def stock_usage_report():
         Ingredient.unit,
         Ingredient.grams_per_unit,
         Ingredient.supplier,
+        Ingredient.price_per_unit,
+        Ingredient.selling_price,
         func.coalesce(func.sum(InventoryLedger.qty_delta), 0).label("qty_delta")
     ).join(User, InventoryLedger.store_id == User.id) \
      .join(Ingredient, InventoryLedger.ingredient_id == Ingredient.id) \
@@ -1752,7 +1754,16 @@ def stock_usage_report():
     if selected_store != "all":
         query = query.filter(User.id == selected_store)
 
-    query = query.group_by(User.username, Ingredient.id, Ingredient.name, Ingredient.unit, Ingredient.grams_per_unit, Ingredient.supplier)
+    query = query.group_by(
+        User.username,
+        Ingredient.id,
+        Ingredient.name,
+        Ingredient.unit,
+        Ingredient.grams_per_unit,
+        Ingredient.supplier,
+        Ingredient.price_per_unit,
+        Ingredient.selling_price
+    )
     raw_rows = query.order_by(User.username.asc(), Ingredient.name.asc()).all()
 
     rows = []
@@ -1767,13 +1778,23 @@ def stock_usage_report():
         grams_per_unit = Decimal(str(row.grams_per_unit or 0))
         grams_used = units_used * grams_per_unit if grams_per_unit else None
 
+        unit_price = None
+        if selected_store == "all":
+            unit_price = Decimal(str(row.selling_price or 0))
+        else:
+            unit_price = Decimal(str(row.price_per_unit or 0))
+
+        total_cost = units_used * unit_price if unit_price is not None else None
+
         rows.append({
             "store_name": row.store_name,
             "ingredient_name": row.ingredient_name,
             "unit": row.unit,
             "supplier": row.supplier,
             "units_used": units_used,
-            "grams_used": grams_used
+            "grams_used": grams_used,
+            "unit_price": unit_price,
+            "total_cost": total_cost
         })
 
         totals_by_store.setdefault(row.store_name, Decimal("0"))

@@ -54,6 +54,7 @@
                         <th class="text-end">Units Used</th>
                         <th class="text-end">Unit</th>
                         <th class="text-end">Grams Used</th>
+                        <th class="text-end">Total Cost</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -73,10 +74,13 @@
                                 —
                             {% endif %}
                         </td>
+                        <td class="text-end mono">
+                            ${{ "%.2f"|format(row.total_cost or 0) }}
+                        </td>
                     </tr>
                     {% endfor %}
                     {% if not rows %}
-                    {% set col_count = 6 if selected_store == "all" else 5 %}
+                    {% set col_count = 7 if selected_store == "all" else 6 %}
                     <tr>
                         <td colspan="{{ col_count }}" class="text-center small-text">
                             No usage data for this range. Run Square Sync first.
