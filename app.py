@@ -102,6 +102,11 @@ def best_recipe_match(item_name, recipe_choices):
     return best_id, best_ratio
 
 def apply_square_mappings(store_name, start_dt=None, end_dt=None):
+    lock_name = f"square_apply_{store_name}"
+    lock_ok = db.session.execute(text("SELECT GET_LOCK(:name, 0)"), {"name": lock_name}).scalar()
+    if lock_ok != 1:
+        return {"created": 0, "unmapped": [], "skipped": True}
+
     query = SquareOrderLine.query.filter_by(store_name=store_name)
     if start_dt:
         query = query.filter(SquareOrderLine.created_at >= start_dt)
@@ -116,82 +121,107 @@ def apply_square_mappings(store_name, start_dt=None, end_dt=None):
     if not store_user:
         return {"created": 0, "unmapped": []}
 
-    for line in lines:
-        if not line.catalog_object_id:
-            continue
+    sales_recipe_cache = {}
+    recipe_cache = {}
+    ingredient_cache = {}
 
-        source_id = f"{store_name}:{line.line_uid}"
-        mapping = SquareItemSalesRecipe.query.filter_by(
-            store_name=store_name,
-            catalog_object_id=line.catalog_object_id,
-            active=True
-        ).first()
-        recipe_ingredients = []
-        multiplier = Decimal("1")
+    try:
+        with db.session.no_autoflush:
+            for line in lines:
+                if not line.catalog_object_id:
+                    continue
 
-        if mapping:
-            sales_recipe = mapping.sales_recipe
-            if sales_recipe:
-                recipe_ingredients = SalesRecipeIngredient.query.filter_by(
-                    sales_recipe_id=sales_recipe.id
-                ).all()
-            multiplier = Decimal(str(mapping.multiplier or 1))
-        else:
-            legacy_mapping = SquareItemRecipe.query.filter_by(
-                store_name=store_name,
-                catalog_object_id=line.catalog_object_id,
-                active=True
-            ).first()
-            if legacy_mapping:
-                recipe_ingredients = RecipeIngredient.query.filter_by(
-                    recipe_id=legacy_mapping.recipe_id
-                ).all()
-                multiplier = Decimal(str(legacy_mapping.multiplier or 1))
+                source_id = f"{store_name}:{line.line_uid}"
+                mapping = SquareItemSalesRecipe.query.filter_by(
+                    store_name=store_name,
+                    catalog_object_id=line.catalog_object_id,
+                    active=True
+                ).first()
+                recipe_ingredients = []
+                multiplier = Decimal("1")
 
-        if not recipe_ingredients:
-            unmapped.add(line.catalog_object_id)
-            continue
+                if mapping:
+                    sales_recipe_id = mapping.sales_recipe_id
+                    if sales_recipe_id in sales_recipe_cache:
+                        recipe_ingredients = sales_recipe_cache[sales_recipe_id]
+                    else:
+                        recipe_ingredients = SalesRecipeIngredient.query.filter_by(
+                            sales_recipe_id=sales_recipe_id
+                        ).all()
+                        sales_recipe_cache[sales_recipe_id] = recipe_ingredients
+                    multiplier = Decimal(str(mapping.multiplier or 1))
+                else:
+                    legacy_mapping = SquareItemRecipe.query.filter_by(
+                        store_name=store_name,
+                        catalog_object_id=line.catalog_object_id,
+                        active=True
+                    ).first()
+                    if legacy_mapping:
+                        recipe_id = legacy_mapping.recipe_id
+                        if recipe_id in recipe_cache:
+                            recipe_ingredients = recipe_cache[recipe_id]
+                        else:
+                            recipe_ingredients = RecipeIngredient.query.filter_by(
+                                recipe_id=recipe_id
+                            ).all()
+                            recipe_cache[recipe_id] = recipe_ingredients
+                        multiplier = Decimal(str(legacy_mapping.multiplier or 1))
 
-        quantity = Decimal(str(line.quantity or 0))
-        if quantity == 0:
-            continue
+                if not recipe_ingredients:
+                    unmapped.add(line.catalog_object_id)
+                    continue
 
-        sign = Decimal("1") if line.is_return else Decimal("-1")
+                quantity = Decimal(str(line.quantity or 0))
+                if quantity == 0:
+                    continue
 
-        for ri in recipe_ingredients:
-            ingredient = Ingredient.query.get(ri.ingredient_id)
-            if not ingredient:
-                continue
+                sign = Decimal("1") if line.is_return else Decimal("-1")
 
-            grams_per_unit = Decimal(str(ingredient.grams_per_unit or 0))
-            if grams_per_unit == 0:
-                continue
+                for ri in recipe_ingredients:
+                    ingredient = ingredient_cache.get(ri.ingredient_id)
+                    if not ingredient:
+                        ingredient = Ingredient.query.get(ri.ingredient_id)
+                        ingredient_cache[ri.ingredient_id] = ingredient
+                    if not ingredient:
+                        continue
 
-            existing = InventoryLedger.query.filter_by(
-                source_type="SQUARE_LINE",
-                source_id=source_id,
-                ingredient_id=ingredient.id
-            ).first()
-            if existing:
-                continue
+                    grams_per_unit = Decimal(str(ingredient.grams_per_unit or 0))
+                    if grams_per_unit == 0:
+                        continue
 
-            grams_needed = Decimal(str(ri.grams_used)) * quantity * multiplier
-            units_needed = grams_needed / grams_per_unit
-            qty_delta = sign * units_needed
+                    existing = InventoryLedger.query.filter_by(
+                        source_type="SQUARE_LINE",
+                        source_id=source_id,
+                        ingredient_id=ingredient.id
+                    ).first()
+                    if existing:
+                        continue
 
-            ledger = InventoryLedger(
-                store_id=store_user.id,
-                ingredient_id=ingredient.id,
-                qty_delta=qty_delta,
-                reason="REFUND" if line.is_return else "SALE",
-                source_type="SQUARE_LINE",
-                source_id=source_id,
-                occurred_at=line.created_at or datetime.utcnow()
-            )
-            db.session.add(ledger)
-            created += 1
+                    grams_needed = Decimal(str(ri.grams_used)) * quantity * multiplier
+                    units_needed = grams_needed / grams_per_unit
+                    qty_delta = sign * units_needed
 
-    return {"created": created, "unmapped": sorted(list(unmapped))}
+                    ledger = InventoryLedger(
+                        store_id=store_user.id,
+                        ingredient_id=ingredient.id,
+                        qty_delta=qty_delta,
+                        reason="REFUND" if line.is_return else "SALE",
+                        source_type="SQUARE_LINE",
+                        source_id=source_id,
+                        occurred_at=line.created_at or datetime.utcnow()
+                    )
+                    db.session.add(ledger)
+                    created += 1
+
+        db.session.commit()
+        return {"created": created, "unmapped": sorted(list(unmapped))}
+    except OperationalError as exc:
+        db.session.rollback()
+        if "Lock wait timeout exceeded" in str(exc):
+            return {"created": 0, "unmapped": sorted(list(unmapped)), "error": "Database is busy. Please try again."}
+        return {"created": 0, "unmapped": sorted(list(unmapped)), "error": "Database error. Please try again."}
+    finally:
+        db.session.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": lock_name})
 
 def sync_square_orders(store_name, start_utc, end_utc, verbose=False):
     lock_name = f"square_sync_{store_name}"
@@ -3499,6 +3529,8 @@ def square_sync():
         result = sync_square_orders(selected_store, start_utc, end_utc)
         if result.get("skipped"):
             flash("Square sync already running for this store. Try again shortly.", "warning")
+        elif result.get("error"):
+            flash(result["error"], "danger")
         else:
             flash("Square sync completed.", "success")
 
@@ -3529,7 +3561,12 @@ def square_mappings():
 
         if action == "apply":
             applied = apply_square_mappings(store_name)
-            flash(f"Applied mappings. Ledger entries: {applied['created']}.", "success")
+            if applied.get("skipped"):
+                flash("Square mapping already running for this store. Try again shortly.", "warning")
+            elif applied.get("error"):
+                flash(applied["error"], "danger")
+            else:
+                flash(f"Applied mappings. Ledger entries: {applied['created']}.", "success")
             return redirect(url_for("square_mappings", store_name=store_name))
 
         if action and action.startswith("save_one_"):
