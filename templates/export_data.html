@@ -1,0 +1,86 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
+        <div>
+            <h2 class="fw-bold app-title">Export Data</h2>
+            <div class="small-text">Create a custom CSV export for sales data.</div>
+        </div>
+    </div>
+
+    <div class="card app-card mx-3 mb-4 p-4">
+        <form method="POST" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label small-text fw-semibold">Store</label>
+                <select name="store" class="form-select">
+                    <option value="">All Stores</option>
+                    {% for store in stores %}
+                        <option value="{{ store }}">{{ store }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small-text fw-semibold">Supplier</label>
+                <select name="supplier" class="form-select">
+                    <option value="">All Suppliers</option>
+                    {% for supplier in suppliers %}
+                        <option value="{{ supplier.name }}">{{ supplier.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small-text fw-semibold">Category</label>
+                <select name="category" class="form-select">
+                    <option value="">All Categories</option>
+                    {% for category in categories %}
+                        <option value="{{ category.name }}">{{ category.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small-text fw-semibold">Date Range</label>
+                <div class="d-flex gap-2">
+                    <input type="date" name="start_date" class="form-control">
+                    <input type="date" name="end_date" class="form-control">
+                </div>
+            </div>
+
+            <div class="col-12">
+                <h5 class="fw-bold mb-2">Columns</h5>
+                <div class="row g-2">
+                    {% for key, label in column_options %}
+                    <div class="col-6 col-md-4">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="columns" id="col-{{ key }}" value="{{ key }}"
+                                   {% if key in ["date", "store", "item_name", "quantity", "price", "selling_price", "total_revenue", "total_cost"] %}
+                                   checked
+                                   {% endif %}>
+                            <label class="form-check-label" for="col-{{ key }}">{{ label }}</label>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="d-flex gap-2 mt-3">
+                    <button type="button" class="btn app-btn-secondary app-btn" id="selectAll">Select All</button>
+                    <button type="button" class="btn app-btn-secondary app-btn" id="clearAll">Clear</button>
+                </div>
+            </div>
+
+            <div class="col-12">
+                <button type="submit" class="btn app-btn-primary app-btn w-100">Export CSV</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.getElementById("selectAll").addEventListener("click", () => {
+    document.querySelectorAll("input[name='columns']").forEach(cb => cb.checked = true);
+});
+document.getElementById("clearAll").addEventListener("click", () => {
+    document.querySelectorAll("input[name='columns']").forEach(cb => cb.checked = false);
+});
+</script>
+
+{% endblock %}

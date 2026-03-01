@@ -6,6 +6,8 @@ from fpdf import FPDF
 import os
 from math import ceil
 from decimal import Decimal, InvalidOperation
+import csv
+from io import BytesIO, StringIO
 from itertools import groupby
 from collections import defaultdict
 from sqlalchemy.sql import text, func
@@ -1598,6 +1600,123 @@ def reporting_page():
         total_revenue_inc=total_revenue_inc,
 
         gp_margin=gp_margin
+    )
+
+
+@app.route("/admin/export_data", methods=["GET", "POST"])
+@login_required
+def export_data():
+    if current_user.role != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("index"))
+
+    stores = [
+        row[0] for row in db.session.query(StockOutRecord.store)
+        .distinct()
+        .filter(StockOutRecord.store.isnot(None))
+        .order_by(StockOutRecord.store.asc())
+        .all()
+    ]
+    categories = Category.query.order_by(Category.name.asc()).all()
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+
+    column_options = [
+        ("date", "Date"),
+        ("store", "Store"),
+        ("item_name", "Item Name"),
+        ("quantity", "Quantity"),
+        ("unit", "Unit"),
+        ("supplier", "Supplier"),
+        ("category", "Category"),
+        ("price", "Cost Price"),
+        ("selling_price", "Selling Price"),
+        ("total_cost", "Total Cost"),
+        ("total_revenue", "Total Revenue")
+    ]
+
+    if request.method == "POST":
+        selected_columns = request.form.getlist("columns")
+        selected_store = request.form.get("store") or ""
+        selected_category = request.form.get("category") or ""
+        selected_supplier = request.form.get("supplier") or ""
+        start_date = request.form.get("start_date") or ""
+        end_date = request.form.get("end_date") or ""
+
+        if not selected_columns:
+            flash("Please select at least one column to export.", "warning")
+            return redirect(url_for("export_data"))
+
+        query = db.session.query(StockOutRecord, Ingredient).outerjoin(
+            Ingredient, Ingredient.name == StockOutRecord.item
+        )
+
+        if selected_store:
+            query = query.filter(StockOutRecord.store == selected_store)
+
+        if start_date and end_date:
+            query = query.filter(StockOutRecord.date.between(start_date, end_date))
+
+        if selected_category:
+            query = query.filter(Ingredient.category == selected_category)
+
+        if selected_supplier:
+            query = query.filter(Ingredient.supplier == selected_supplier)
+
+        rows = query.order_by(StockOutRecord.date.desc()).all()
+
+        def fmt(value, places=2):
+            if value is None:
+                return ""
+            try:
+                return f"{Decimal(str(value)):.{places}f}"
+            except (InvalidOperation, ValueError):
+                return str(value)
+
+        output = StringIO()
+        writer = csv.writer(output)
+
+        header_labels = {key: label for key, label in column_options}
+        writer.writerow([header_labels.get(col, col) for col in selected_columns])
+
+        for record, ingredient in rows:
+            quantity = Decimal(str(record.quantity or 0))
+            price = Decimal(str(record.price or 0))
+            selling_price = Decimal(str(record.selling_price or 0))
+
+            data = {
+                "date": record.date,
+                "store": record.store,
+                "item_name": record.item,
+                "quantity": fmt(quantity, 2),
+                "unit": ingredient.unit if ingredient else "",
+                "supplier": ingredient.supplier if ingredient else "",
+                "category": ingredient.category if ingredient else "",
+                "price": fmt(price, 2),
+                "selling_price": fmt(selling_price, 2),
+                "total_cost": fmt(quantity * price, 2),
+                "total_revenue": fmt(quantity * selling_price, 2)
+            }
+
+            writer.writerow([data.get(col, "") for col in selected_columns])
+
+        csv_bytes = output.getvalue().encode("utf-8")
+        buffer = BytesIO(csv_bytes)
+        buffer.seek(0)
+
+        filename = f"stock_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
+        return send_file(
+            buffer,
+            mimetype="text/csv",
+            as_attachment=True,
+            download_name=filename
+        )
+
+    return render_template(
+        "export_data.html",
+        stores=stores,
+        categories=categories,
+        suppliers=suppliers,
+        column_options=column_options
     )
 
 @app.route("/admin/variance_report", methods=["GET"])
