@@ -3305,10 +3305,7 @@ def submit_weekly_stocktake():
 
 import smtplib
 import os
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
+from email.message import EmailMessage
 
 
 SMTP_SERVER = "smtp.gmail.com"  # ✅ Your email provider's SMTP
@@ -3348,30 +3345,29 @@ def send_invoice(invoice_no):
                 return jsonify({"success": False, "message": "Failed to generate invoice PDF."})
 
         # ✅ Create email
-        msg = MIMEMultipart()
+        msg = EmailMessage()
         msg["From"] = SMTP_USERNAME
         msg["To"] = recipient_email
         msg["Subject"] = f"Invoice #{invoice_no}"
 
         # ✅ Email Body
         body = f"Please find attached Invoice #{invoice_no}."
-        msg.attach(MIMEText(body, "plain", "utf-8"))
+        msg.set_content(body)
 
         # ✅ Attach PDF file
         with open(pdf_path, "rb") as attachment:
-            part = MIMEBase("application", "octet-stream")
-            part.set_payload(attachment.read())
-            encoders.encode_base64(part)
-            # ✅ Use ASCII-safe filename in headers to avoid encoding errors
-            safe_pdf_filename = re.sub(r"[^A-Za-z0-9._-]", "_", pdf_filename)
-            part.add_header("Content-Disposition", f"attachment; filename={safe_pdf_filename}")
-            msg.attach(part)
+            msg.add_attachment(
+                attachment.read(),
+                maintype="application",
+                subtype="pdf",
+                filename=pdf_filename,
+            )
 
         # ✅ Send email
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
         server.login(SMTP_USERNAME, SMTP_PASSWORD)
-        server.sendmail(SMTP_USERNAME, recipient_email, msg.as_bytes())
+        server.send_message(msg)
         server.quit()
 
         return jsonify({"success": True, "message": f"Invoice #{invoice_no} sent to {recipient_email}!"})
