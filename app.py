@@ -1031,6 +1031,23 @@ def invoices_by_store(store):
 def export_invoice(invoice_no):
     """Generate and download a formatted PDF invoice (GST exclusive + GST added)."""
 
+    def _latin1_safe(value):
+        if value is None:
+            return ""
+        if not isinstance(value, str):
+            value = str(value)
+        # Normalize common Unicode punctuation to ASCII equivalents
+        value = (
+            value.replace("（", "(")
+            .replace("）", ")")
+            .replace("–", "-")
+            .replace("—", "-")
+            .replace("’", "'")
+            .replace("“", '"')
+            .replace("”", '"')
+        )
+        return value.encode("latin-1", "replace").decode("latin-1")
+
     records = StockOutRecord.query.filter_by(invoice_no=invoice_no).all()
 
     if not records:
@@ -1064,12 +1081,12 @@ def export_invoice(invoice_no):
     pdf.set_font("Arial", "B", 12)
     pdf.cell(40, 8, "Bill To:", border=0)
     pdf.set_font("Arial", "", 12)
-    pdf.cell(150, 8, records[0].store, border=0, ln=True)
+    pdf.cell(150, 8, _latin1_safe(records[0].store), border=0, ln=True)
 
     pdf.set_font("Arial", "B", 12)
     pdf.cell(40, 8, "Invoice Date:", border=0)
     pdf.set_font("Arial", "", 12)
-    pdf.cell(150, 8, records[0].date, border=0, ln=True)
+    pdf.cell(150, 8, _latin1_safe(records[0].date), border=0, ln=True)
 
     pdf.set_font("Arial", "B", 12)
     pdf.cell(40, 8, "Terms:", border=0)
@@ -1079,7 +1096,7 @@ def export_invoice(invoice_no):
     pdf.set_font("Arial", "B", 12)
     pdf.cell(40, 8, "Due Date:", border=0)
     pdf.set_font("Arial", "", 12)
-    pdf.cell(150, 8, records[0].date, border=0, ln=True)
+    pdf.cell(150, 8, _latin1_safe(records[0].date), border=0, ln=True)
 
     pdf.ln(10)
 
@@ -1107,7 +1124,7 @@ def export_invoice(invoice_no):
         line_total = float(selling_price) * float(record.quantity)
         subtotal += line_total
 
-        pdf.cell(80, 10, record.item, border=1)
+        pdf.cell(80, 10, _latin1_safe(record.item), border=1)
         pdf.cell(30, 10, f"{record.quantity:.1f}", border=1, align="C")
         pdf.cell(40, 10, f"${selling_price:.2f}", border=1, align="C")
         pdf.cell(40, 10, f"${line_total:.2f}", border=1, align="C", ln=True)
