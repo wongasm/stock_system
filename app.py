@@ -3668,10 +3668,21 @@ def sales_report():
         all_sales[store_name] = store_orders
         store_revenue[store_name] = round(store_total, 2)
 
-    sorted_category_sales = {
-        cat: dict(sorted(items.items(), key=lambda x: x[1]["quantity"], reverse=True))
-        for cat, items in category_sales.items()
-    }
+    sorted_category_sales = {}
+    for cat, items in category_sales.items():
+        sorted_items = dict(
+            sorted(items.items(), key=lambda x: x[1]["quantity"], reverse=True)
+        )
+        category_revenue = sum(item["revenue"] for item in sorted_items.values())
+        category_quantity = sum(item["quantity"] for item in sorted_items.values())
+        sales_share = (category_revenue / total_revenue * 100) if total_revenue else 0
+
+        sorted_category_sales[cat] = {
+            "items": sorted_items,
+            "total_revenue": round(category_revenue, 2),
+            "total_quantity": category_quantity,
+            "sales_share": round(sales_share, 1),
+        }
 
     average_order_value = total_revenue / total_orders if total_orders > 0 else 0
 

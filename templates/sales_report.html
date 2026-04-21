@@ -88,11 +88,18 @@
         <h4 class="fw-bold mb-3">Top-Selling Items by Category</h4>
 
         {% if category_sales %}
-            {% for category, items in category_sales.items() %}
+            {% for category, category_data in category_sales.items() %}
 
             <div class="card app-card mb-4 p-3 sales-category-card" onclick="toggleCategory(this)">
-                <div class="d-flex justify-content-between">
-                    <h5 class="fw-bold">{{ category }}</h5>
+                <div class="d-flex justify-content-between align-items-start gap-3">
+                    <div>
+                        <h5 class="fw-bold mb-1">{{ category }}</h5>
+                        <div class="category-summary">
+                            <span class="category-metric">${{ '%.2f'|format(category_data.total_revenue) }} sold</span>
+                            <span class="category-metric">{{ '%.1f'|format(category_data.sales_share) }}% of total sales</span>
+                            <span class="category-metric">{{ category_data.total_quantity }} items</span>
+                        </div>
+                    </div>
                     <span class="toggle-arrow">▼</span>
                 </div>
 
@@ -106,11 +113,11 @@
                             </tr>
                         </thead>
                         <tbody>
-                            {% for item, data in items.items() %}
+                            {% for item, item_data in category_data["items"].items() %}
                             <tr>
                                 <td>{{ item }}</td>
-                                <td>{{ data.quantity }}</td>
-                                <td>${{ '%.2f'|format(data.revenue) }}</td>
+                                <td>{{ item_data.quantity }}</td>
+                                <td>${{ '%.2f'|format(item_data.revenue) }}</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -161,6 +168,22 @@ function toggleCategory(card) {
 .toggle-arrow {
     font-size: 1.2rem;
     opacity: 0.5;
+}
+
+.category-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    color: #6B7280;
+    font-size: 0.92rem;
+}
+
+.category-metric {
+    background: #f5f7fb;
+    border: 1px solid rgba(17, 24, 39, 0.08);
+    border-radius: 999px;
+    padding: 0.25rem 0.7rem;
+    font-weight: 600;
 }
 
 .category-details {
