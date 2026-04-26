@@ -247,6 +247,29 @@ def parse_weekly_enabled_entries(enabled_entries, order_data):
 
     return enabled_ids, section_by_ingredient
 
+
+def get_square_line_item_revenue(item):
+    total_money = item.get("total_money", {}) or {}
+    total_amount = total_money.get("amount")
+    if total_amount is not None:
+        return float(total_amount) / 100
+
+    quantity = Decimal(str(item.get("quantity", 0) or 0))
+    base_amount = Decimal(str((item.get("base_price_money", {}) or {}).get("amount", 0) or 0))
+    modifier_amount = Decimal("0")
+
+    for modifier in item.get("modifiers", []) or []:
+        modifier_total = (modifier.get("total_price_money", {}) or {}).get("amount")
+        if modifier_total is not None:
+            modifier_amount += Decimal(str(modifier_total))
+            continue
+
+        modifier_base = (modifier.get("base_price_money", {}) or {}).get("amount", 0) or 0
+        modifier_quantity = Decimal(str(modifier.get("quantity", quantity) or quantity))
+        modifier_amount += Decimal(str(modifier_base)) * modifier_quantity
+
+    return float((base_amount * quantity + modifier_amount) / Decimal("100"))
+
 def apply_square_mappings(store_name, start_dt=None, end_dt=None):
     lock_name = f"square_apply_{store_name}"
     lock_ok = db.session.execute(text("SELECT GET_LOCK(:name, 0)"), {"name": lock_name}).scalar()
@@ -3873,11 +3896,11 @@ def sales_report():
                 if not item_name:
                     continue
                 qty = int(item.get("quantity", 0))
-                price = item.get("base_price_money", {}).get("amount", 0) / 100
+                line_revenue = get_square_line_item_revenue(item)
                 total_items_sold += qty
                 category = ITEM_CATEGORY_MAP.get(item_name, "Uncategorized")
                 category_sales[category][item_name]["quantity"] += qty
-                category_sales[category][item_name]["revenue"] += price * qty
+                category_sales[category][item_name]["revenue"] += line_revenue
 
         all_sales[store_name] = store_orders
         store_revenue[store_name] = round(store_total, 2)
