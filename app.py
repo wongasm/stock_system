@@ -2943,6 +2943,8 @@ def update_weekly_stocktake_order():
                 ingredient.weekly_order_position = 0
                 ingredient.weekly_section_name = None
 
+            # Reset store-specific overrides so every store uses the shared weekly order
+            StoreWeeklyItem.query.delete()
             db.session.commit()
 
         return jsonify({"success": True})

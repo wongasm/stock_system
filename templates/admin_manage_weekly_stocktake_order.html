@@ -5,7 +5,7 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
         <div>
             <h2 class="fw-bold app-title">Weekly Stocktake Order</h2>
-            <div class="small-text">Choose `All Stores` for the shared default list, or pick one store to override it with a custom version.</div>
+            <div class="small-text">Choose `All Stores` to apply one weekly stocktake order to every store, or pick one store to override it with a custom version.</div>
         </div>
         <span class="badge-soft">{{ enabled_ingredients|length }} enabled</span>
     </div>
@@ -26,7 +26,7 @@
                 </select>
                 <div class="small-text mt-2">
                     {% if selected_store == "all" %}
-                        Stores without their own custom weekly list will follow this shared stocktake order and sections.
+                        Saving here will reset existing store-specific weekly overrides so every store uses this shared order and sections.
                     {% else %}
                         This store can have its own weekly stocktake layout without changing the shared default.
                     {% endif %}
