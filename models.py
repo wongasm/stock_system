@@ -119,6 +119,7 @@ class StoreWeeklyItem(db.Model):
     ingredient_id = db.Column(db.Integer, db.ForeignKey("ingredient.id"), nullable=False)
     enabled = db.Column(db.Boolean, default=False, nullable=False)
     order_position = db.Column(db.Integer, default=0, nullable=False)
+    section_name = db.Column(db.String(255), nullable=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     store = db.relationship("User", backref="weekly_items")

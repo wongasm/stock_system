@@ -44,34 +44,43 @@
                         </tr>
                     </thead>
                     <tbody>
-                        {% for ingredient in ingredients %}
-                        <tr>
-                            <td class="fw-semibold">{{ ingredient.name }}</td>
+                        {% for entry in stocktake_entries %}
+                            {% if entry.type == "section" %}
+                                <tr class="stocktake-section-row" data-row-type="section">
+                                    <td colspan="2">
+                                        <div class="stocktake-section-label">{{ entry.name }}</div>
+                                    </td>
+                                </tr>
+                            {% else %}
+                                {% set ingredient = entry.ingredient %}
+                                <tr data-row-type="ingredient">
+                                    <td class="fw-semibold">{{ ingredient.name }}</td>
 
-                            <td>
-                                {% if ingredient.measurement_type == 'binary' %}
-                                    <select
-                                        name="quantity_{{ ingredient.id }}"
-                                        class="form-select stocktake-input"
-                                        data-ingredient="{{ ingredient.id }}"
-                                    >
-                                        <option value="">Select</option>
-                                        <option value="Enough in store">Enough in store</option>
-                                        <option value="Not enough in store">Not enough in store</option>
-                                    </select>
-                                {% else %}
-                                    <input
-                                        type="number"
-                                        step="0.1"
-                                        min="0"
-                                        name="quantity_{{ ingredient.id }}"
-                                        class="form-control numeric-input"
-                                        data-ingredient="{{ ingredient.id }}"
-                                        placeholder="Enter amount"
-                                    >
-                                {% endif %}
-                            </td>
-                        </tr>
+                                    <td>
+                                        {% if ingredient.measurement_type == 'binary' %}
+                                            <select
+                                                name="quantity_{{ ingredient.id }}"
+                                                class="form-select stocktake-input"
+                                                data-ingredient="{{ ingredient.id }}"
+                                            >
+                                                <option value="">Select</option>
+                                                <option value="Enough in store">Enough in store</option>
+                                                <option value="Not enough in store">Not enough in store</option>
+                                            </select>
+                                        {% else %}
+                                            <input
+                                                type="number"
+                                                step="0.1"
+                                                min="0"
+                                                name="quantity_{{ ingredient.id }}"
+                                                class="form-control numeric-input"
+                                                data-ingredient="{{ ingredient.id }}"
+                                                placeholder="Enter amount"
+                                            >
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>
@@ -126,7 +135,9 @@ document.addEventListener("DOMContentLoaded", function () {
         input.addEventListener("input", function () {
             const id = this.dataset.ingredient;
             const cell = document.querySelector(`.need-to-buy[data-ingredient='${id}']`);
-            cell.innerText = parseFloat(this.value) > 0 ? "No" : "Yes (Buy 1)";
+            if (cell) {
+                cell.innerText = parseFloat(this.value) > 0 ? "No" : "Yes (Buy 1)";
+            }
         });
     });
 
@@ -154,13 +165,51 @@ document.addEventListener("DOMContentLoaded", function () {
     if (stocktakeSearch) {
         stocktakeSearch.addEventListener("input", () => {
             const query = stocktakeSearch.value.trim().toLowerCase();
-            document.querySelectorAll("tbody tr").forEach(row => {
+            const rows = Array.from(document.querySelectorAll("tbody tr"));
+            let activeSectionRow = null;
+            let sectionHasVisibleItems = false;
+
+            rows.forEach((row) => {
+                if (row.dataset.rowType === "section") {
+                    if (activeSectionRow) {
+                        activeSectionRow.style.display = sectionHasVisibleItems || !query ? "" : "none";
+                    }
+                    activeSectionRow = row;
+                    sectionHasVisibleItems = false;
+                    row.style.display = !query ? "" : "none";
+                    return;
+                }
+
                 const name = row.querySelector("td")?.textContent.trim().toLowerCase() || "";
-                row.style.display = name.includes(query) ? "" : "none";
+                const visible = !query || name.includes(query);
+                row.style.display = visible ? "" : "none";
+                if (visible) {
+                    sectionHasVisibleItems = true;
+                }
             });
+
+            if (activeSectionRow) {
+                activeSectionRow.style.display = sectionHasVisibleItems || !query ? "" : "none";
+            }
         });
     }
 });
 </script>
+
+<style>
+.stocktake-section-row td {
+    background: linear-gradient(135deg, #f8f4ea, #f2ebdf);
+    border-top: 1px solid rgba(199, 141, 59, 0.35);
+    border-bottom: 1px solid rgba(199, 141, 59, 0.2);
+}
+
+.stocktake-section-label {
+    color: #8a5b18;
+    font-size: 0.82rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+</style>
 
 {% endblock %}

@@ -5,7 +5,7 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
         <div>
             <h2 class="fw-bold app-title">Weekly Stocktake Order</h2>
-            <div class="small-text">Choose a store, then drag ingredients between lists to customize weekly stocktake.</div>
+            <div class="small-text">Choose a store, then drag ingredients between lists and add section headings for staff.</div>
         </div>
         <span class="badge-soft">{{ enabled_ingredients|length }} enabled</span>
     </div>
@@ -33,15 +33,36 @@
                     <span class="badge-soft">{{ enabled_ingredients|length }}</span>
                 </div>
                 <input type="text" id="weeklyEnabledSearch" class="form-control search-input mb-2" placeholder="Search enabled...">
+                <div class="row g-2 mb-3">
+                    <div class="col-sm-8">
+                        <input type="text" id="newWeeklySectionName" class="form-control" placeholder="Add section heading">
+                    </div>
+                    <div class="col-sm-4">
+                        <button type="button" id="addWeeklySection" class="btn app-btn-secondary w-100">Add Section</button>
+                    </div>
+                </div>
                 <ul id="weeklyStocktakeList" class="list-group list-group-flush min-vh-25">
-                    {% for ingredient in enabled_ingredients %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
-                            <span class="item-name fw-semibold">{{ ingredient.name }}</span>
-                            <div class="d-flex align-items-center gap-2">
-                                <button type="button" class="btn btn-sm btn-outline-danger move-item" data-action="remove">-</button>
-                                <span class="drag-handle">≡</span>
-                            </div>
-                        </li>
+                    {% for entry in enabled_entries %}
+                        {% if entry.type == "section" %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center weekly-section-item" data-type="section" data-section-name="{{ entry.name }}">
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="section-badge">Section</span>
+                                    <span class="section-name fw-semibold">{{ entry.name }}</span>
+                                </div>
+                                <div class="d-flex align-items-center gap-2">
+                                    <button type="button" class="btn btn-sm btn-outline-secondary move-item" data-action="delete-section">Remove</button>
+                                    <span class="drag-handle">≡</span>
+                                </div>
+                            </li>
+                        {% else %}
+                            <li class="list-group-item d-flex justify-content-between align-items-center" data-type="ingredient" data-id="{{ entry.ingredient.id }}">
+                                <span class="item-name fw-semibold">{{ entry.ingredient.name }}</span>
+                                <div class="d-flex align-items-center gap-2">
+                                    <button type="button" class="btn btn-sm btn-outline-danger move-item" data-action="remove">-</button>
+                                    <span class="drag-handle">≡</span>
+                                </div>
+                            </li>
+                        {% endif %}
                     {% endfor %}
                 </ul>
             </div>
@@ -56,7 +77,7 @@
                 <input type="text" id="weeklyAvailableSearch" class="form-control search-input mb-2" placeholder="Search available...">
                 <ul id="weeklyStocktakeAvailable" class="list-group list-group-flush min-vh-25">
                     {% for ingredient in disabled_ingredients %}
-                        <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
+                        <li class="list-group-item d-flex justify-content-between align-items-center" data-type="ingredient" data-id="{{ ingredient.id }}">
                             <span class="item-name fw-semibold">{{ ingredient.name }}</span>
                             <div class="d-flex align-items-center gap-2">
                                 <button type="button" class="btn btn-sm btn-outline-success move-item" data-action="add">+</button>
@@ -81,12 +102,56 @@
         const available = document.getElementById("weeklyStocktakeAvailable");
         const saveButton = document.getElementById("saveWeeklyOrder");
         const storeSelect = document.getElementById("storeSelect");
+        const addSectionButton = document.getElementById("addWeeklySection");
+        const sectionInput = document.getElementById("newWeeklySectionName");
+
+        function createSectionItem(sectionName) {
+            const li = document.createElement("li");
+            li.className = "list-group-item d-flex justify-content-between align-items-center weekly-section-item";
+            li.dataset.type = "section";
+            li.dataset.sectionName = sectionName;
+            li.innerHTML = `
+                <div class="d-flex align-items-center gap-2">
+                    <span class="section-badge">Section</span>
+                    <span class="section-name fw-semibold"></span>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary move-item" data-action="delete-section">Remove</button>
+                    <span class="drag-handle">≡</span>
+                </div>
+            `;
+            li.querySelector(".section-name").textContent = sectionName;
+            return li;
+        }
+
+        function syncItemButtons() {
+            list.querySelectorAll('li[data-type="ingredient"] .move-item').forEach((button) => {
+                button.dataset.action = "remove";
+                button.classList.remove("btn-outline-success");
+                button.classList.add("btn-outline-danger");
+                button.textContent = "-";
+            });
+
+            available.querySelectorAll('li[data-type="ingredient"] .move-item').forEach((button) => {
+                button.dataset.action = "add";
+                button.classList.remove("btn-outline-danger");
+                button.classList.add("btn-outline-success");
+                button.textContent = "+";
+            });
+        }
 
         const sortableOptions = {
             group: "weekly-stocktake",
             animation: 150,
             handle: ".drag-handle",
+            onMove: function (evt) {
+                if (evt.dragged.dataset.type === "section" && evt.to.id === "weeklyStocktakeAvailable") {
+                    return false;
+                }
+                return true;
+            },
             onEnd: function () {
+                syncItemButtons();
                 saveButton.disabled = false;
             }
         };
@@ -98,20 +163,19 @@
             const li = button.closest("li");
             if (!li) return;
 
-            if (button.dataset.action === "add") {
-                list.appendChild(li);
-                button.dataset.action = "remove";
-                button.classList.remove("btn-outline-success");
-                button.classList.add("btn-outline-danger");
-                button.textContent = "-";
-            } else {
-                available.appendChild(li);
-                button.dataset.action = "add";
-                button.classList.remove("btn-outline-danger");
-                button.classList.add("btn-outline-success");
-                button.textContent = "+";
+            if (button.dataset.action === "delete-section") {
+                li.remove();
+                saveButton.disabled = false;
+                return;
             }
 
+            if (button.dataset.action === "add") {
+                list.appendChild(li);
+            } else {
+                available.appendChild(li);
+            }
+
+            syncItemButtons();
             saveButton.disabled = false;
         }
 
@@ -122,19 +186,52 @@
             }
         });
 
+        addSectionButton.addEventListener("click", function () {
+            const sectionName = sectionInput.value.trim();
+            if (!sectionName) {
+                alert("Enter a section name first.");
+                return;
+            }
+
+            list.appendChild(createSectionItem(sectionName));
+            sectionInput.value = "";
+            saveButton.disabled = false;
+        });
+
+        sectionInput.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                addSectionButton.click();
+            }
+        });
+
         storeSelect.addEventListener("change", function () {
             const storeId = storeSelect.value;
             window.location.href = `{{ url_for('manage_weekly_stocktake_order') }}?store_id=${storeId}`;
         });
 
         saveButton.addEventListener("click", function () {
-            let enabledOrder = [];
+            let enabledEntries = [];
             let disabledItems = [];
 
             document.querySelectorAll("#weeklyStocktakeList li").forEach((item) => {
-                enabledOrder.push(item.getAttribute("data-id"));
+                if (item.dataset.type === "section") {
+                    const sectionName = item.dataset.sectionName || item.querySelector(".section-name")?.textContent.trim() || "";
+                    if (sectionName) {
+                        enabledEntries.push({
+                            type: "section",
+                            name: sectionName
+                        });
+                    }
+                    return;
+                }
+
+                enabledEntries.push({
+                    type: "ingredient",
+                    id: item.getAttribute("data-id")
+                });
             });
-            document.querySelectorAll("#weeklyStocktakeAvailable li").forEach((item) => {
+            document.querySelectorAll('#weeklyStocktakeAvailable li[data-type="ingredient"]').forEach((item) => {
                 disabledItems.push(item.getAttribute("data-id"));
             });
 
@@ -145,7 +242,7 @@
                 },
                 body: JSON.stringify({
                     store_id: storeSelect.value,
-                    enabled_order: enabledOrder,
+                    enabled_entries: enabledEntries,
                     disabled: disabledItems
                 })
             })
@@ -167,7 +264,7 @@
             input.addEventListener("input", () => {
                 const query = input.value.trim().toLowerCase();
                 listEl.querySelectorAll("li").forEach(item => {
-                    const name = item.querySelector(".item-name")?.textContent.trim().toLowerCase() || "";
+                    const name = item.querySelector(".item-name, .section-name")?.textContent.trim().toLowerCase() || "";
                     item.style.display = name.includes(query) ? "flex" : "none";
                 });
             });
@@ -175,8 +272,29 @@
 
         bindSearch("weeklyEnabledSearch", "weeklyStocktakeList");
         bindSearch("weeklyAvailableSearch", "weeklyStocktakeAvailable");
+        syncItemButtons();
     });
 </script>
+
+<style>
+.weekly-section-item {
+    background: linear-gradient(135deg, #f8f4ea, #f3ede0);
+    border-left: 4px solid #c78d3b;
+}
+
+.section-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.18rem 0.55rem;
+    background: rgba(199, 141, 59, 0.14);
+    color: #8a5b18;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+</style>
 
 <!-- ✅ Include SortableJS Library -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.14.0/Sortable.min.js"></script>

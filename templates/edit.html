@@ -65,6 +65,14 @@
                 <input type="number" step="0.01" name="selling_price" class="form-control" value="{{ ingredient.selling_price }}">
             </div>
             <div class="col-md-4">
+                <label class="form-label small-text fw-semibold">Stocktake Input Type</label>
+                <select name="measurement_type" class="form-select">
+                    <option value="numeric" {% if ingredient.measurement_type != "binary" %}selected{% endif %}>Numeric amount</option>
+                    <option value="binary" {% if ingredient.measurement_type == "binary" %}selected{% endif %}>Enough / Not enough</option>
+                </select>
+                <div class="small-text mt-1">Binary items show `Enough in store` and `Not enough in store` during stocktake.</div>
+            </div>
+            <div class="col-md-4">
                 <label for="daily_stocktake" class="form-label small-text fw-semibold">Daily Stocktake</label>
                 <select name="daily_stocktake" class="form-select">
                     <option value="1" {% if ingredient.daily_stocktake %}selected{% endif %}>Yes</option>

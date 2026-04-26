@@ -61,6 +61,14 @@
                 <input type="number" step="0.01" name="selling_price" class="form-control" placeholder="Enter selling price">
             </div>
             <div class="col-md-4">
+                <label class="form-label small-text fw-semibold">Stocktake Input Type</label>
+                <select name="measurement_type" class="form-select">
+                    <option value="numeric" selected>Numeric amount</option>
+                    <option value="binary">Enough / Not enough</option>
+                </select>
+                <div class="small-text mt-1">Use binary for yes/no style stock checks instead of quantity counts.</div>
+            </div>
+            <div class="col-md-4">
                 <label for="daily_stocktake" class="form-label small-text fw-semibold">Include in Daily Stocktake</label>
                 <select name="daily_stocktake" class="form-select">
                     <option value="1" {% if ingredient and ingredient.daily_stocktake %}selected{% endif %}>Yes</option>

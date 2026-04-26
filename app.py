@@ -17,7 +17,7 @@ from forms import LoginForm
 from flask_migrate import Migrate
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.exc import SQLAlchemyError, OperationalError, IntegrityError
-from sqlalchemy import cast, Numeric, and_
+from sqlalchemy import cast, Numeric, and_, inspect
 from flask_mail import Mail, Message
 from dotenv import load_dotenv
 from square_api import fetch_sales_for_store
@@ -102,6 +102,45 @@ def best_recipe_match(item_name, recipe_choices):
             best_ratio = ratio
             best_id = recipe_id
     return best_id, best_ratio
+
+
+def ensure_store_weekly_item_schema():
+    column_names = {
+        column["name"]
+        for column in inspect(db.engine).get_columns("store_weekly_item")
+    }
+
+    if "section_name" not in column_names:
+        try:
+            db.session.execute(
+                text("ALTER TABLE store_weekly_item ADD COLUMN section_name VARCHAR(255) NULL")
+            )
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+
+
+def build_weekly_section_entries(store_items, ingredient_map):
+    entries = []
+    last_section = None
+
+    for store_item in store_items:
+        ingredient = ingredient_map.get(store_item.ingredient_id)
+        if not ingredient:
+            continue
+
+        section_name = (store_item.section_name or "").strip() or None
+        if section_name and section_name != last_section:
+            entries.append({"type": "section", "name": section_name})
+
+        entries.append({
+            "type": "ingredient",
+            "ingredient": ingredient,
+            "section_name": section_name
+        })
+        last_section = section_name
+
+    return entries
 
 def apply_square_mappings(store_name, start_dt=None, end_dt=None):
     lock_name = f"square_apply_{store_name}"
@@ -379,6 +418,7 @@ def sync_square_orders(store_name, start_utc, end_utc, verbose=False):
 # Create tables
 with app.app_context():
     db.create_all()
+    ensure_store_weekly_item_schema()
 
 @app.route("/", methods=["GET", "POST"])
 @login_required
@@ -429,6 +469,10 @@ def add_ingredient():
     price_per_unit = request.form.get("price_per_unit")
     selling_price = request.form.get("selling_price")
     daily_stocktake = request.form.get("daily_stocktake")
+    measurement_type = request.form.get("measurement_type", "numeric")
+
+    if measurement_type not in {"numeric", "binary"}:
+        measurement_type = "numeric"
 
 
     daily_stocktake = True if daily_stocktake == "1" else False
@@ -447,7 +491,8 @@ def add_ingredient():
             price_per_unit=float(price_per_unit) if price_per_unit else None,
             selling_price=float(selling_price) if selling_price else None,
             daily_stocktake=daily_stocktake,
-            weekly_stocktake=weekly_stocktake
+            weekly_stocktake=weekly_stocktake,
+            measurement_type=measurement_type
         )
         db.session.add(new_ingredient)
         db.session.commit()
@@ -518,6 +563,9 @@ def update_ingredient(id):
         ingredient.threshold = float(request.form.get("threshold", 0))
         ingredient.price_per_unit = float(request.form.get("price_per_unit", 0))
         ingredient.selling_price = float(request.form.get("selling_price", 0))
+        ingredient.measurement_type = request.form.get("measurement_type", "numeric")
+        if ingredient.measurement_type not in {"numeric", "binary"}:
+            ingredient.measurement_type = "numeric"
 
         # ✅ Booleans
         ingredient.daily_stocktake = request.form.get("daily_stocktake") == "1"
@@ -2300,10 +2348,15 @@ def stocktake(stocktake_type):
         return redirect(url_for("index"))
 
     user_id = current_user.id
+    stocktake_entries = []
 
     # ✅ Filter ingredients based on stocktake type & enforce custom ordering
     if stocktake_type == "daily":
         ingredients = Ingredient.query.filter_by(daily_stocktake=True).order_by(Ingredient.order_position.asc()).all()
+        stocktake_entries = [
+            {"type": "ingredient", "ingredient": ingredient, "section_name": None}
+            for ingredient in ingredients
+        ]
     elif stocktake_type == "weekly":
         store_items = StoreWeeklyItem.query.filter_by(
             store_id=user_id,
@@ -2319,8 +2372,13 @@ def stocktake(stocktake_type):
                 for item_id in ingredient_ids
                 if item_id in ingredient_map
             ]
+            stocktake_entries = build_weekly_section_entries(store_items, ingredient_map)
         else:
             ingredients = Ingredient.query.filter_by(weekly_stocktake=True).order_by(Ingredient.weekly_order_position.asc()).all()
+            stocktake_entries = [
+                {"type": "ingredient", "ingredient": ingredient, "section_name": None}
+                for ingredient in ingredients
+            ]
     else:
         flash("Invalid stocktake type.", "danger")
         return redirect(url_for("index"))
@@ -2395,7 +2453,12 @@ def stocktake(stocktake_type):
 
         return redirect(url_for("stocktake", stocktake_type=stocktake_type))
 
-    return render_template("stocktake.html", ingredients=ingredients, stocktake_type=stocktake_type)
+    return render_template(
+        "stocktake.html",
+        ingredients=ingredients,
+        stocktake_entries=stocktake_entries,
+        stocktake_type=stocktake_type
+    )
 
 @app.route("/admin/stocktake", methods=["GET"])
 @login_required
@@ -2722,6 +2785,7 @@ def manage_weekly_stocktake_order():
         selected_store = str(stores[0].id)
 
     all_ingredients = Ingredient.query.order_by(Ingredient.name.asc()).all()
+    enabled_entries = []
     enabled_ingredients = []
     disabled_ingredients = []
 
@@ -2730,7 +2794,6 @@ def manage_weekly_stocktake_order():
         store_items = StoreWeeklyItem.query.filter_by(store_id=selected_store).all()
 
     if store_items:
-        store_item_map = {item.ingredient_id: item for item in store_items}
         enabled_items = sorted(
             [item for item in store_items if item.enabled],
             key=lambda item: item.order_position
@@ -2742,6 +2805,7 @@ def manage_weekly_stocktake_order():
             for ingredient_id in enabled_ids
             if ingredient_id in ingredient_map
         ]
+        enabled_entries = build_weekly_section_entries(enabled_items, ingredient_map)
         disabled_ingredients = [
             ingredient for ingredient in all_ingredients
             if ingredient.id not in set(enabled_ids)
@@ -2751,6 +2815,10 @@ def manage_weekly_stocktake_order():
             weekly_stocktake=True
         ).order_by(Ingredient.weekly_order_position.asc()).all()
         enabled_ids = {ingredient.id for ingredient in enabled_ingredients}
+        enabled_entries = [
+            {"type": "ingredient", "ingredient": ingredient, "section_name": None}
+            for ingredient in enabled_ingredients
+        ]
         disabled_ingredients = [
             ingredient for ingredient in all_ingredients
             if ingredient.id not in enabled_ids
@@ -2760,6 +2828,7 @@ def manage_weekly_stocktake_order():
         "admin_manage_weekly_stocktake_order.html",
         stores=stores,
         selected_store=selected_store,
+        enabled_entries=enabled_entries,
         enabled_ingredients=enabled_ingredients,
         disabled_ingredients=disabled_ingredients
     )
@@ -2773,16 +2842,54 @@ def update_weekly_stocktake_order():
 
     payload = request.json or {}
     order_data = payload.get("enabled_order")
+    enabled_entries = payload.get("enabled_entries")
     disabled_data = payload.get("disabled")
     store_id = payload.get("store_id")
 
-    if store_id and order_data is not None and disabled_data is not None:
+    if store_id and (enabled_entries is not None or order_data is not None) and disabled_data is not None:
         try:
             store_id_int = int(store_id)
         except (TypeError, ValueError):
             return jsonify({"success": False, "error": "Invalid store_id"})
 
-        enabled_ids = [int(item_id) for item_id in order_data]
+        enabled_ids = []
+        section_by_ingredient = {}
+
+        if enabled_entries is not None:
+            current_section = None
+            seen_enabled = set()
+
+            for entry in enabled_entries:
+                if not isinstance(entry, dict):
+                    continue
+
+                entry_type = entry.get("type")
+                if entry_type == "section":
+                    raw_name = (entry.get("name") or "").strip()
+                    current_section = raw_name or None
+                    continue
+
+                if entry_type != "ingredient":
+                    continue
+
+                try:
+                    ingredient_id = int(entry.get("id"))
+                except (TypeError, ValueError):
+                    continue
+
+                if ingredient_id in seen_enabled:
+                    continue
+
+                seen_enabled.add(ingredient_id)
+                enabled_ids.append(ingredient_id)
+                section_by_ingredient[ingredient_id] = current_section
+        else:
+            enabled_ids = [int(item_id) for item_id in order_data]
+            section_by_ingredient = {
+                ingredient_id: None
+                for ingredient_id in enabled_ids
+            }
+
         disabled_ids = [int(item_id) for item_id in disabled_data]
         all_ids = list(set(enabled_ids + disabled_ids))
 
@@ -2802,6 +2909,7 @@ def update_weekly_stocktake_order():
                 db.session.add(row)
             row.enabled = True
             row.order_position = index
+            row.section_name = section_by_ingredient.get(ingredient_id)
 
         for ingredient_id in disabled_ids:
             row = existing_map.get(ingredient_id)
@@ -2813,6 +2921,7 @@ def update_weekly_stocktake_order():
                 db.session.add(row)
             row.enabled = False
             row.order_position = 0
+            row.section_name = None
 
         db.session.commit()
         return jsonify({"success": True})
