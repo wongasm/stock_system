@@ -126,6 +126,15 @@ def ensure_ingredient_schema():
         for column in inspect(db.engine).get_columns("ingredient")
     }
 
+    if "daily_section_name" not in column_names:
+        try:
+            db.session.execute(
+                text("ALTER TABLE ingredient ADD COLUMN daily_section_name VARCHAR(255) NULL")
+            )
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+
     if "weekly_section_name" not in column_names:
         try:
             db.session.execute(
@@ -165,6 +174,25 @@ def build_default_weekly_section_entries(ingredients):
 
     for ingredient in ingredients:
         section_name = (ingredient.weekly_section_name or "").strip() or None
+        if section_name and section_name != last_section:
+            entries.append({"type": "section", "name": section_name})
+
+        entries.append({
+            "type": "ingredient",
+            "ingredient": ingredient,
+            "section_name": section_name
+        })
+        last_section = section_name
+
+    return entries
+
+
+def build_default_daily_section_entries(ingredients):
+    entries = []
+    last_section = None
+
+    for ingredient in ingredients:
+        section_name = (ingredient.daily_section_name or "").strip() or None
         if section_name and section_name != last_section:
             entries.append({"type": "section", "name": section_name})
 
@@ -2431,10 +2459,7 @@ def stocktake(stocktake_type):
     # ✅ Filter ingredients based on stocktake type & enforce custom ordering
     if stocktake_type == "daily":
         ingredients = Ingredient.query.filter_by(daily_stocktake=True).order_by(Ingredient.order_position.asc()).all()
-        stocktake_entries = [
-            {"type": "ingredient", "ingredient": ingredient, "section_name": None}
-            for ingredient in ingredients
-        ]
+        stocktake_entries = build_default_daily_section_entries(ingredients)
     elif stocktake_type == "weekly":
         store_items = StoreWeeklyItem.query.filter_by(
             store_id=user_id,
@@ -2821,14 +2846,22 @@ def update_stocktake_order():
         flash("Access denied.", "danger")
         return redirect(url_for("index"))
 
-    order_data = request.json.get("order")
+    payload = request.json or {}
+    order_data = payload.get("order")
+    enabled_entries = payload.get("enabled_entries")
 
-    if order_data:
-        for index, ingredient_id in enumerate(order_data):
-            db.session.execute(
-                text("UPDATE ingredient SET order_position = :order WHERE id = :id"),
-                {"order": index, "id": ingredient_id}
-            )
+    enabled_ids, section_by_ingredient = parse_weekly_enabled_entries(enabled_entries, order_data)
+
+    if enabled_ids:
+        ingredient_rows = Ingredient.query.filter(Ingredient.id.in_(enabled_ids)).all()
+        ingredient_map = {ingredient.id: ingredient for ingredient in ingredient_rows}
+
+        for index, ingredient_id in enumerate(enabled_ids):
+            ingredient = ingredient_map.get(ingredient_id)
+            if not ingredient:
+                continue
+            ingredient.order_position = index
+            ingredient.daily_section_name = section_by_ingredient.get(ingredient_id)
         db.session.commit()
         return jsonify({"success": True})
 
@@ -2844,7 +2877,13 @@ def manage_stocktake_order():
     # Fetch ingredients ordered by `order_position`
     ingredients = Ingredient.query.filter_by(daily_stocktake=True).order_by(Ingredient.order_position.asc()).all()
 
-    return render_template("admin_manage_stocktake_order.html", ingredients=ingredients)
+    stocktake_entries = build_default_daily_section_entries(ingredients)
+
+    return render_template(
+        "admin_manage_stocktake_order.html",
+        ingredients=ingredients,
+        stocktake_entries=stocktake_entries
+    )
 
 @app.route("/admin/manage_weekly_stocktake_order", methods=["GET"])
 @login_required

@@ -5,22 +5,44 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
         <div>
             <h2 class="fw-bold app-title">Daily Stocktake Order</h2>
-            <div class="small-text">Drag and drop ingredients to set the daily stocktake order.</div>
+            <div class="small-text">Drag ingredients into order and add section headings to break the daily stocktake into clear parts.</div>
         </div>
         <span class="badge-soft">{{ ingredients|length }} items</span>
     </div>
 
     <div class="card app-card mx-3 mb-3 p-3">
-        <input type="text" id="stocktakeSearch" class="form-control search-input" placeholder="Search ingredients...">
+        <input type="text" id="stocktakeSearch" class="form-control search-input" placeholder="Search ingredients or sections...">
     </div>
 
     <div class="card app-card mx-3 mb-5 p-3">
+        <div class="row g-2 mb-3">
+            <div class="col-sm-8 col-lg-5">
+                <input type="text" id="newDailySectionName" class="form-control" placeholder="Add section heading">
+            </div>
+            <div class="col-sm-4 col-lg-3">
+                <button type="button" id="addDailySection" class="btn app-btn-secondary w-100">Add Section</button>
+            </div>
+        </div>
+
         <ul id="stocktakeList" class="list-group list-group-flush">
-            {% for ingredient in ingredients %}
-                <li class="list-group-item d-flex justify-content-between align-items-center" data-id="{{ ingredient.id }}">
-                    <span class="fw-semibold">{{ ingredient.name }}</span>
-                    <span class="drag-handle">≡</span>
-                </li>
+            {% for entry in stocktake_entries %}
+                {% if entry.type == "section" %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center daily-section-item" data-type="section" data-section-name="{{ entry.name }}">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="section-badge">Section</span>
+                            <span class="section-name fw-semibold">{{ entry.name }}</span>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary section-remove">Remove</button>
+                            <span class="drag-handle">≡</span>
+                        </div>
+                    </li>
+                {% else %}
+                    <li class="list-group-item d-flex justify-content-between align-items-center" data-type="ingredient" data-id="{{ entry.ingredient.id }}">
+                        <span class="item-name fw-semibold">{{ entry.ingredient.name }}</span>
+                        <span class="drag-handle">≡</span>
+                    </li>
+                {% endif %}
             {% endfor %}
         </ul>
 
@@ -28,57 +50,138 @@
     </div>
 </div>
 
-<!-- ✅ JavaScript for Drag-and-Drop -->
 <script>
-    document.addEventListener("DOMContentLoaded", function () {
-        const list = document.getElementById("stocktakeList");
-        const saveButton = document.getElementById("saveOrder");
-        const searchInput = document.getElementById("stocktakeSearch");
+document.addEventListener("DOMContentLoaded", function () {
+    const list = document.getElementById("stocktakeList");
+    const saveButton = document.getElementById("saveOrder");
+    const searchInput = document.getElementById("stocktakeSearch");
+    const addSectionButton = document.getElementById("addDailySection");
+    const sectionInput = document.getElementById("newDailySectionName");
 
-        new Sortable(list, {
-            animation: 150,
-            handle: ".drag-handle",
-            onEnd: function () {
-                saveButton.disabled = false;
-            }
-        });
+    function createSectionItem(sectionName) {
+        const li = document.createElement("li");
+        li.className = "list-group-item d-flex justify-content-between align-items-center daily-section-item";
+        li.dataset.type = "section";
+        li.dataset.sectionName = sectionName;
+        li.innerHTML = `
+            <div class="d-flex align-items-center gap-2">
+                <span class="section-badge">Section</span>
+                <span class="section-name fw-semibold"></span>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary section-remove">Remove</button>
+                <span class="drag-handle">≡</span>
+            </div>
+        `;
+        li.querySelector(".section-name").textContent = sectionName;
+        return li;
+    }
 
-        saveButton.addEventListener("click", function () {
-            let order = [];
-            document.querySelectorAll("#stocktakeList li").forEach((item, index) => {
-                order.push(item.getAttribute("data-id"));
-            });
-
-            fetch("{{ url_for('update_stocktake_order') }}", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({ order: order })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert("Stocktake order updated successfully!");
-                    location.reload();
-                } else {
-                    alert("Failed to update order.");
-                }
-            });
-        });
-
-        if (searchInput) {
-            searchInput.addEventListener("input", () => {
-                const query = searchInput.value.trim().toLowerCase();
-                document.querySelectorAll("#stocktakeList li").forEach(item => {
-                    const name = item.textContent.trim().toLowerCase();
-                    item.style.display = name.includes(query) ? "flex" : "none";
-                });
-            });
+    new Sortable(list, {
+        animation: 150,
+        handle: ".drag-handle",
+        onEnd: function () {
+            saveButton.disabled = false;
         }
     });
+
+    addSectionButton.addEventListener("click", function () {
+        const sectionName = sectionInput.value.trim();
+        if (!sectionName) {
+            alert("Enter a section name first.");
+            return;
+        }
+
+        list.appendChild(createSectionItem(sectionName));
+        sectionInput.value = "";
+        saveButton.disabled = false;
+    });
+
+    sectionInput.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            addSectionButton.click();
+        }
+    });
+
+    document.addEventListener("click", function (event) {
+        const removeButton = event.target.closest(".section-remove");
+        if (!removeButton) return;
+
+        removeButton.closest("li")?.remove();
+        saveButton.disabled = false;
+    });
+
+    saveButton.addEventListener("click", function () {
+        let enabledEntries = [];
+
+        document.querySelectorAll("#stocktakeList li").forEach((item) => {
+            if (item.dataset.type === "section") {
+                const sectionName = item.dataset.sectionName || item.querySelector(".section-name")?.textContent.trim() || "";
+                if (sectionName) {
+                    enabledEntries.push({
+                        type: "section",
+                        name: sectionName
+                    });
+                }
+                return;
+            }
+
+            enabledEntries.push({
+                type: "ingredient",
+                id: item.getAttribute("data-id")
+            });
+        });
+
+        fetch("{{ url_for('update_stocktake_order') }}", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ enabled_entries: enabledEntries })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert("Daily stocktake order updated successfully!");
+                location.reload();
+            } else {
+                alert("Failed to update order.");
+            }
+        });
+    });
+
+    if (searchInput) {
+        searchInput.addEventListener("input", () => {
+            const query = searchInput.value.trim().toLowerCase();
+            document.querySelectorAll("#stocktakeList li").forEach(item => {
+                const name = item.querySelector(".item-name, .section-name")?.textContent.trim().toLowerCase() || "";
+                item.style.display = !query || name.includes(query) ? "flex" : "none";
+            });
+        });
+    }
+});
 </script>
 
-<!-- ✅ Include SortableJS Library -->
+<style>
+.daily-section-item {
+    background: linear-gradient(135deg, #f8f4ea, #f3ede0);
+    border-left: 4px solid #c78d3b;
+}
+
+.section-badge {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.18rem 0.55rem;
+    background: rgba(199, 141, 59, 0.14);
+    color: #8a5b18;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+</style>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.14.0/Sortable.min.js"></script>
 {% endblock %}

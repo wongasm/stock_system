@@ -22,6 +22,7 @@ class Ingredient(db.Model):
     daily_stocktake = db.Column(db.Boolean, default=False, nullable=False)
     weekly_stocktake = db.Column(db.Boolean, default=False, nullable=False)  # ✅ New column
     order_position = db.Column(db.Integer, default=0)
+    daily_section_name = db.Column(db.String(255), nullable=True)
     weekly_order_position = db.Column(db.Integer, default=0)
     weekly_section_name = db.Column(db.String(255), nullable=True)
     monthly_stocktakes = db.relationship("MonthlyStocktake", backref="ingredient_stock", cascade="all, delete")
