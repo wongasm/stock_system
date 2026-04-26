@@ -23,6 +23,7 @@ class Ingredient(db.Model):
     weekly_stocktake = db.Column(db.Boolean, default=False, nullable=False)  # ✅ New column
     order_position = db.Column(db.Integer, default=0)
     weekly_order_position = db.Column(db.Integer, default=0)
+    weekly_section_name = db.Column(db.String(255), nullable=True)
     monthly_stocktakes = db.relationship("MonthlyStocktake", backref="ingredient_stock", cascade="all, delete")
     measurement_type = db.Column(db.String(10), default="numeric", nullable=False)
     is_archived = db.Column(db.Boolean, default=False, nullable=False)

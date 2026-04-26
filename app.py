@@ -120,6 +120,22 @@ def ensure_store_weekly_item_schema():
             db.session.rollback()
 
 
+def ensure_ingredient_schema():
+    column_names = {
+        column["name"]
+        for column in inspect(db.engine).get_columns("ingredient")
+    }
+
+    if "weekly_section_name" not in column_names:
+        try:
+            db.session.execute(
+                text("ALTER TABLE ingredient ADD COLUMN weekly_section_name VARCHAR(255) NULL")
+            )
+            db.session.commit()
+        except SQLAlchemyError:
+            db.session.rollback()
+
+
 def build_weekly_section_entries(store_items, ingredient_map):
     entries = []
     last_section = None
@@ -141,6 +157,67 @@ def build_weekly_section_entries(store_items, ingredient_map):
         last_section = section_name
 
     return entries
+
+
+def build_default_weekly_section_entries(ingredients):
+    entries = []
+    last_section = None
+
+    for ingredient in ingredients:
+        section_name = (ingredient.weekly_section_name or "").strip() or None
+        if section_name and section_name != last_section:
+            entries.append({"type": "section", "name": section_name})
+
+        entries.append({
+            "type": "ingredient",
+            "ingredient": ingredient,
+            "section_name": section_name
+        })
+        last_section = section_name
+
+    return entries
+
+
+def parse_weekly_enabled_entries(enabled_entries, order_data):
+    enabled_ids = []
+    section_by_ingredient = {}
+
+    if enabled_entries is not None:
+        current_section = None
+        seen_enabled = set()
+
+        for entry in enabled_entries:
+            if not isinstance(entry, dict):
+                continue
+
+            entry_type = entry.get("type")
+            if entry_type == "section":
+                raw_name = (entry.get("name") or "").strip()
+                current_section = raw_name or None
+                continue
+
+            if entry_type != "ingredient":
+                continue
+
+            try:
+                ingredient_id = int(entry.get("id"))
+            except (TypeError, ValueError):
+                continue
+
+            if ingredient_id in seen_enabled:
+                continue
+
+            seen_enabled.add(ingredient_id)
+            enabled_ids.append(ingredient_id)
+            section_by_ingredient[ingredient_id] = current_section
+    else:
+        enabled_ids = [int(item_id) for item_id in (order_data or [])]
+        section_by_ingredient = {
+            ingredient_id: None
+            for ingredient_id in enabled_ids
+        }
+
+    return enabled_ids, section_by_ingredient
 
 def apply_square_mappings(store_name, start_dt=None, end_dt=None):
     lock_name = f"square_apply_{store_name}"
@@ -419,6 +496,7 @@ def sync_square_orders(store_name, start_utc, end_utc, verbose=False):
 with app.app_context():
     db.create_all()
     ensure_store_weekly_item_schema()
+    ensure_ingredient_schema()
 
 @app.route("/", methods=["GET", "POST"])
 @login_required
@@ -2375,10 +2453,7 @@ def stocktake(stocktake_type):
             stocktake_entries = build_weekly_section_entries(store_items, ingredient_map)
         else:
             ingredients = Ingredient.query.filter_by(weekly_stocktake=True).order_by(Ingredient.weekly_order_position.asc()).all()
-            stocktake_entries = [
-                {"type": "ingredient", "ingredient": ingredient, "section_name": None}
-                for ingredient in ingredients
-            ]
+            stocktake_entries = build_default_weekly_section_entries(ingredients)
     else:
         flash("Invalid stocktake type.", "danger")
         return redirect(url_for("index"))
@@ -2781,8 +2856,8 @@ def manage_weekly_stocktake_order():
     stores = User.query.filter_by(role="user").all()
     selected_store = request.args.get("store_id")
 
-    if not selected_store and stores:
-        selected_store = str(stores[0].id)
+    if not selected_store:
+        selected_store = "all"
 
     all_ingredients = Ingredient.query.order_by(Ingredient.name.asc()).all()
     enabled_entries = []
@@ -2790,7 +2865,7 @@ def manage_weekly_stocktake_order():
     disabled_ingredients = []
 
     store_items = []
-    if selected_store:
+    if selected_store and selected_store != "all":
         store_items = StoreWeeklyItem.query.filter_by(store_id=selected_store).all()
 
     if store_items:
@@ -2815,10 +2890,7 @@ def manage_weekly_stocktake_order():
             weekly_stocktake=True
         ).order_by(Ingredient.weekly_order_position.asc()).all()
         enabled_ids = {ingredient.id for ingredient in enabled_ingredients}
-        enabled_entries = [
-            {"type": "ingredient", "ingredient": ingredient, "section_name": None}
-            for ingredient in enabled_ingredients
-        ]
+        enabled_entries = build_default_weekly_section_entries(enabled_ingredients)
         disabled_ingredients = [
             ingredient for ingredient in all_ingredients
             if ingredient.id not in enabled_ids
@@ -2846,50 +2918,42 @@ def update_weekly_stocktake_order():
     disabled_data = payload.get("disabled")
     store_id = payload.get("store_id")
 
+    if store_id == "all" and (enabled_entries is not None or order_data is not None) and disabled_data is not None:
+        enabled_ids, section_by_ingredient = parse_weekly_enabled_entries(enabled_entries, order_data)
+        disabled_ids = [int(item_id) for item_id in disabled_data]
+        all_ids = list(set(enabled_ids + disabled_ids))
+
+        if all_ids:
+            ingredient_rows = Ingredient.query.filter(Ingredient.id.in_(all_ids)).all()
+            ingredient_map = {ingredient.id: ingredient for ingredient in ingredient_rows}
+
+            for index, ingredient_id in enumerate(enabled_ids):
+                ingredient = ingredient_map.get(ingredient_id)
+                if not ingredient:
+                    continue
+                ingredient.weekly_stocktake = True
+                ingredient.weekly_order_position = index
+                ingredient.weekly_section_name = section_by_ingredient.get(ingredient_id)
+
+            for ingredient_id in disabled_ids:
+                ingredient = ingredient_map.get(ingredient_id)
+                if not ingredient:
+                    continue
+                ingredient.weekly_stocktake = False
+                ingredient.weekly_order_position = 0
+                ingredient.weekly_section_name = None
+
+            db.session.commit()
+
+        return jsonify({"success": True})
+
     if store_id and (enabled_entries is not None or order_data is not None) and disabled_data is not None:
         try:
             store_id_int = int(store_id)
         except (TypeError, ValueError):
             return jsonify({"success": False, "error": "Invalid store_id"})
 
-        enabled_ids = []
-        section_by_ingredient = {}
-
-        if enabled_entries is not None:
-            current_section = None
-            seen_enabled = set()
-
-            for entry in enabled_entries:
-                if not isinstance(entry, dict):
-                    continue
-
-                entry_type = entry.get("type")
-                if entry_type == "section":
-                    raw_name = (entry.get("name") or "").strip()
-                    current_section = raw_name or None
-                    continue
-
-                if entry_type != "ingredient":
-                    continue
-
-                try:
-                    ingredient_id = int(entry.get("id"))
-                except (TypeError, ValueError):
-                    continue
-
-                if ingredient_id in seen_enabled:
-                    continue
-
-                seen_enabled.add(ingredient_id)
-                enabled_ids.append(ingredient_id)
-                section_by_ingredient[ingredient_id] = current_section
-        else:
-            enabled_ids = [int(item_id) for item_id in order_data]
-            section_by_ingredient = {
-                ingredient_id: None
-                for ingredient_id in enabled_ids
-            }
-
+        enabled_ids, section_by_ingredient = parse_weekly_enabled_entries(enabled_entries, order_data)
         disabled_ids = [int(item_id) for item_id in disabled_data]
         all_ids = list(set(enabled_ids + disabled_ids))
 

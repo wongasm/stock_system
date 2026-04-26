@@ -5,7 +5,7 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 px-3">
         <div>
             <h2 class="fw-bold app-title">Weekly Stocktake Order</h2>
-            <div class="small-text">Choose a store, then drag ingredients between lists and add section headings for staff.</div>
+            <div class="small-text">Choose `All Stores` for the shared default list, or pick one store to override it with a custom version.</div>
         </div>
         <span class="badge-soft">{{ enabled_ingredients|length }} enabled</span>
     </div>
@@ -15,12 +15,22 @@
             <div class="col-md-6">
                 <label class="form-label small-text fw-semibold">Select Store</label>
                 <select id="storeSelect" class="form-select">
+                    <option value="all" {% if selected_store == "all" %}selected{% endif %}>
+                        All Stores (Default)
+                    </option>
                     {% for store in stores %}
                         <option value="{{ store.id }}" {% if store.id|string == selected_store %}selected{% endif %}>
                             {{ store.username }}
                         </option>
                     {% endfor %}
                 </select>
+                <div class="small-text mt-2">
+                    {% if selected_store == "all" %}
+                        Stores without their own custom weekly list will follow this shared stocktake order and sections.
+                    {% else %}
+                        This store can have its own weekly stocktake layout without changing the shared default.
+                    {% endif %}
+                </div>
             </div>
         </div>
     </div>
@@ -249,7 +259,10 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert("Weekly Stocktake list updated successfully!");
+                    const successMessage = storeSelect.value === "all"
+                        ? "Shared weekly stocktake updated successfully!"
+                        : "Weekly stocktake list updated successfully!";
+                    alert(successMessage);
                     location.reload();
                 } else {
                     alert("Failed to update order.");
