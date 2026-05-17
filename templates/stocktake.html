@@ -35,6 +35,8 @@
                 <input type="text" id="stocktakeSearch" class="form-control search-input" placeholder="Search ingredient...">
             </div>
 
+            <div id="stocktakeValidationMessage" class="alert alert-danger d-none" role="alert"></div>
+
             <div class="table-responsive app-table-container mb-3">
                 <table class="table table-hover align-middle mb-0">
                     <thead class="app-thead">
@@ -100,6 +102,11 @@ document.addEventListener("DOMContentLoaded", function () {
     const form = document.getElementById("stocktakeForm");
     const submitButton = form.querySelector("button[type='submit']");
     const storageKey = "autosave_{{ stocktake_type }}";
+    const validationMessage = document.getElementById("stocktakeValidationMessage");
+
+    if (document.querySelector(".flash-message.alert-success")) {
+        localStorage.removeItem(storageKey);
+    }
 
     // ⏳ Warn user after 45 minutes
     setTimeout(() => {
@@ -114,11 +121,32 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     // Autosave on input
+    function clearFieldValidation(field) {
+        field.classList.remove("stocktake-missing");
+        field.closest("tr")?.classList.remove("stocktake-missing-row");
+    }
+
+    function markFieldMissing(field) {
+        field.classList.add("stocktake-missing");
+        field.closest("tr")?.classList.add("stocktake-missing-row");
+    }
+
     form.querySelectorAll("input, select").forEach(el => {
         el.addEventListener("input", () => {
             const state = JSON.parse(localStorage.getItem(storageKey) || "{}");
             state[el.name] = el.value;
             localStorage.setItem(storageKey, JSON.stringify(state));
+            if (el.name.startsWith("quantity_")) {
+                clearFieldValidation(el);
+                validationMessage.classList.add("d-none");
+            }
+        });
+
+        el.addEventListener("change", () => {
+            if (el.name.startsWith("quantity_")) {
+                clearFieldValidation(el);
+                validationMessage.classList.add("d-none");
+            }
         });
     });
 
@@ -141,9 +169,55 @@ document.addEventListener("DOMContentLoaded", function () {
         });
     });
 
+    function validateStocktakeFields() {
+        const quantityFields = form.querySelectorAll('[name^="quantity_"]');
+        let firstMissingField = null;
+        let missingCount = 0;
+
+        quantityFields.forEach((field) => {
+            clearFieldValidation(field);
+            const isMissing = !String(field.value || "").trim();
+
+            if (isMissing) {
+                missingCount += 1;
+                markFieldMissing(field);
+                if (!firstMissingField) {
+                    firstMissingField = field;
+                }
+            }
+        });
+
+        if (!missingCount) {
+            validationMessage.classList.add("d-none");
+            validationMessage.textContent = "";
+            return true;
+        }
+
+        validationMessage.textContent = missingCount === 1
+            ? "There is 1 empty stocktake cell. Please fill in the highlighted item before submitting."
+            : `There are ${missingCount} empty stocktake cells. Please fill in the highlighted items before submitting.`;
+        validationMessage.classList.remove("d-none");
+
+        if (stocktakeSearch && stocktakeSearch.value.trim()) {
+            stocktakeSearch.value = "";
+            stocktakeSearch.dispatchEvent(new Event("input"));
+        }
+
+        if (firstMissingField) {
+            firstMissingField.scrollIntoView({ behavior: "smooth", block: "center" });
+            firstMissingField.focus();
+        }
+
+        return false;
+    }
+
     // Validate session before submitting
     form.addEventListener("submit", function (e) {
         e.preventDefault();
+
+        if (!validateStocktakeFields()) {
+            return;
+        }
 
         fetch("{{ url_for('check_session') }}", { method: "GET" })
         .then(r => r.json())
@@ -151,7 +225,6 @@ document.addEventListener("DOMContentLoaded", function () {
             if (data.active) {
                 submitButton.disabled = true;
                 submitButton.innerText = "Submitting... ⏳";
-                localStorage.removeItem(storageKey);
                 form.submit();
             } else {
                 alert("Your session has expired. Please log in again.");
@@ -209,6 +282,15 @@ document.addEventListener("DOMContentLoaded", function () {
     font-weight: 800;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+}
+
+.stocktake-missing-row td {
+    background: rgba(220, 53, 69, 0.08);
+}
+
+.stocktake-missing {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.12) !important;
 }
 </style>
 
