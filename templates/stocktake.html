@@ -64,6 +64,7 @@
                                                 name="quantity_{{ ingredient.id }}"
                                                 class="form-select stocktake-input"
                                                 data-ingredient="{{ ingredient.id }}"
+                                                required
                                             >
                                                 <option value="">Select</option>
                                                 <option value="Enough in store">Enough in store</option>
@@ -78,6 +79,7 @@
                                                 class="form-control numeric-input"
                                                 data-ingredient="{{ ingredient.id }}"
                                                 placeholder="Enter amount"
+                                                required
                                             >
                                         {% endif %}
                                     </td>
@@ -103,6 +105,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const submitButton = form.querySelector("button[type='submit']");
     const storageKey = "autosave_{{ stocktake_type }}";
     const validationMessage = document.getElementById("stocktakeValidationMessage");
+    const stocktakeSearch = document.getElementById("stocktakeSearch");
+    let allowValidatedSubmit = false;
 
     if (document.querySelector(".flash-message.alert-success")) {
         localStorage.removeItem(storageKey);
@@ -131,22 +135,29 @@ document.addEventListener("DOMContentLoaded", function () {
         field.closest("tr")?.classList.add("stocktake-missing-row");
     }
 
+    function persistFieldValue(el) {
+        const state = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        state[el.name] = el.value;
+        localStorage.setItem(storageKey, JSON.stringify(state));
+        if (el.name.startsWith("quantity_")) {
+            clearFieldValidation(el);
+            validationMessage.classList.add("d-none");
+        }
+    }
+
     form.querySelectorAll("input, select").forEach(el => {
         el.addEventListener("input", () => {
-            const state = JSON.parse(localStorage.getItem(storageKey) || "{}");
-            state[el.name] = el.value;
-            localStorage.setItem(storageKey, JSON.stringify(state));
-            if (el.name.startsWith("quantity_")) {
-                clearFieldValidation(el);
-                validationMessage.classList.add("d-none");
-            }
+            persistFieldValue(el);
         });
 
         el.addEventListener("change", () => {
-            if (el.name.startsWith("quantity_")) {
-                clearFieldValidation(el);
-                validationMessage.classList.add("d-none");
-            }
+            persistFieldValue(el);
+        });
+
+        el.addEventListener("blur", () => {
+            const state = JSON.parse(localStorage.getItem(storageKey) || "{}");
+            state[el.name] = el.value;
+            localStorage.setItem(storageKey, JSON.stringify(state));
         });
     });
 
@@ -198,11 +209,6 @@ document.addEventListener("DOMContentLoaded", function () {
             : `There are ${missingCount} empty stocktake cells. Please fill in the highlighted items before submitting.`;
         validationMessage.classList.remove("d-none");
 
-        if (stocktakeSearch && stocktakeSearch.value.trim()) {
-            stocktakeSearch.value = "";
-            stocktakeSearch.dispatchEvent(new Event("input"));
-        }
-
         if (firstMissingField) {
             firstMissingField.scrollIntoView({ behavior: "smooth", block: "center" });
             firstMissingField.focus();
@@ -213,9 +219,22 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Validate session before submitting
     form.addEventListener("submit", function (e) {
+        if (allowValidatedSubmit) {
+            return;
+        }
+
         e.preventDefault();
 
+        if (stocktakeSearch && stocktakeSearch.value.trim()) {
+            stocktakeSearch.value = "";
+            stocktakeSearch.dispatchEvent(new Event("input"));
+        }
+
         if (!validateStocktakeFields()) {
+            return;
+        }
+
+        if (!form.reportValidity()) {
             return;
         }
 
@@ -225,7 +244,12 @@ document.addEventListener("DOMContentLoaded", function () {
             if (data.active) {
                 submitButton.disabled = true;
                 submitButton.innerText = "Submitting... ⏳";
-                form.submit();
+                allowValidatedSubmit = true;
+                if (typeof form.requestSubmit === "function") {
+                    form.requestSubmit();
+                } else {
+                    form.submit();
+                }
             } else {
                 alert("Your session has expired. Please log in again.");
                 window.location.href = "{{ url_for('login') }}";
@@ -233,8 +257,6 @@ document.addEventListener("DOMContentLoaded", function () {
         })
         .catch(() => alert("Network error. Please retry."));
     });
-
-    const stocktakeSearch = document.getElementById("stocktakeSearch");
     if (stocktakeSearch) {
         stocktakeSearch.addEventListener("input", () => {
             const query = stocktakeSearch.value.trim().toLowerCase();
