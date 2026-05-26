@@ -58,8 +58,8 @@ app.config["MAIL_SERVER"] = "smtp.gmail.com"  # Change for other providers (Outl
 app.config["MAIL_PORT"] = 587  # Common for TLS
 app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USE_SSL"] = False
-app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME", "binginvoice@gmail.com")  # Store in environment variables
-app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD")  # Store securely
+app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME", os.getenv("SMTP_USERNAME", "binginvoice@gmail.com"))  # Prefer MAIL_* but support legacy SMTP_*
+app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD", os.getenv("SMTP_PASSWORD"))  # Prefer MAIL_* but support legacy SMTP_*
 app.config["MAIL_DEFAULT_SENDER"] = os.getenv("MAIL_DEFAULT_SENDER", app.config["MAIL_USERNAME"])  # Default "From" email
 
 mail = Mail(app)
@@ -3564,8 +3564,6 @@ from email.message import EmailMessage
 
 SMTP_SERVER = "smtp.gmail.com"  # ✅ Your email provider's SMTP
 SMTP_PORT = 587
-SMTP_USERNAME = os.getenv("SMTP_USERNAME", os.getenv("MAIL_USERNAME", "binginvoice@gmail.com"))
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", os.getenv("MAIL_PASSWORD"))
 
 @app.route("/send_invoice/<int:invoice_no>", methods=["POST"])
 @login_required
@@ -3599,8 +3597,14 @@ def send_invoice(invoice_no):
                 return jsonify({"success": False, "message": "Failed to generate invoice PDF."})
 
         # ✅ Create email
+        mail_username = app.config.get("MAIL_USERNAME") or "binginvoice@gmail.com"
+        mail_password = app.config.get("MAIL_PASSWORD")
+
+        if not mail_password:
+            return jsonify({"success": False, "message": "Email password is not configured on the server."})
+
         msg = EmailMessage()
-        msg["From"] = SMTP_USERNAME
+        msg["From"] = mail_username
         msg["To"] = recipient_email
         msg["Subject"] = f"Invoice #{invoice_no}"
 
@@ -3620,7 +3624,7 @@ def send_invoice(invoice_no):
         # ✅ Send email
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         server.starttls()
-        server.login(SMTP_USERNAME, SMTP_PASSWORD)
+        server.login(mail_username, mail_password)
         server.send_message(msg)
         server.quit()
 
