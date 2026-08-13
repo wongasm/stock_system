@@ -27,7 +27,7 @@
             top: 0;
             left: 0;
             bottom: 0;
-            width: 260px;
+            width: 270px;
             background: linear-gradient(180deg, rgba(10, 15, 28, 0.98), rgba(15, 23, 42, 0.98));
             color: var(--nav-text);
             padding: 18px 16px 20px;
@@ -38,7 +38,7 @@
         }
 
         #sidebar.hidden {
-            transform: translateX(-260px);
+            transform: translateX(-270px);
         }
 
         #sidebar::-webkit-scrollbar { width: 6px; }
@@ -144,7 +144,7 @@
            CONTENT AREA
         ---------------------------------------------- */
         #content {
-            margin-left: 260px;
+            margin-left: 270px;
             padding: 24px;
             transition: margin-left 0.25s ease;
         }
@@ -158,7 +158,7 @@
         ---------------------------------------------- */
         @media (max-width: 900px) {
             #sidebar {
-                transform: translateX(-260px);
+                transform: translateX(-270px);
             }
 
             #sidebar.open {
@@ -265,6 +265,19 @@
     });
 
     window.addEventListener("resize", applyLayout);
+
+    // Highlight the current page in the sidebar
+    (function () {
+        const here = window.location.pathname.replace(/\/+$/, "");
+        document.querySelectorAll("#sidebar .nav-link-custom").forEach(link => {
+            const target = link.getAttribute("href").replace(/\/+$/, "");
+            if (target && target === here) {
+                link.classList.add("active");
+                const group = link.closest("details.nav-group");
+                if (group) group.open = true;
+            }
+        });
+    })();
 </script>
 
 </body>

@@ -302,3 +302,151 @@ a:hover {
     from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* =====================================================================
+   POLISH LAYER  (additive — shared refinements for every page)
+   ===================================================================== */
+
+/* ---- Shared sidebar (single source of truth for both navbars) ------- */
+#sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 270px;
+    background: linear-gradient(180deg, rgba(10, 15, 28, 0.98), rgba(15, 23, 42, 0.98));
+    color: var(--nav-text);
+    padding: 18px 16px 20px;
+    overflow-y: auto;
+    transition: transform 0.3s ease;
+    box-shadow: var(--shadow-lg);
+    z-index: 2000;
+}
+
+#content {
+    margin-left: 270px;
+    padding: 24px;
+    transition: margin-left 0.3s ease;
+}
+
+#content.expanded { margin-left: 0; }
+
+@media (max-width: 900px) {
+    #sidebar { transform: translateX(-270px); }
+    #content { margin-left: 0 !important; }
+}
+
+/* Active nav link — set by a tiny script in the navbar templates */
+.nav-link-custom.active {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.22), rgba(14, 165, 233, 0.18));
+    border-color: rgba(34, 197, 94, 0.35) !important;
+    color: #ffffff !important;
+}
+
+/* ---- Buttons: consistent motion + hover feedback -------------------- */
+.app-btn,
+.btn {
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, filter 0.15s ease;
+}
+
+.app-btn:hover,
+.btn:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.02);
+}
+
+.app-btn:active,
+.btn:active { transform: translateY(0); }
+
+.app-btn-primary:hover { box-shadow: 0 14px 26px rgba(14, 165, 233, 0.32) !important; }
+
+/* ---- Cards: subtle lift on hover ------------------------------------ */
+.app-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* ---- Reusable page header ------------------------------------------- */
+.page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin: 0 0 24px;
+}
+
+.page-header .page-title {
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 700;
+    font-size: 1.7rem;
+    margin: 0;
+}
+
+.page-header .page-subtitle {
+    color: var(--page-ink-soft);
+    font-size: 0.9rem;
+    margin-top: 2px;
+}
+
+/* ---- Select2 themed to match .form-select --------------------------- */
+.select2-container .select2-selection--single {
+    height: 44px !important;
+    border-radius: 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    display: flex !important;
+    align-items: center !important;
+    padding: 0 12px !important;
+    font-size: 0.95rem;
+}
+
+.select2-container--default .select2-selection--single .select2-selection__rendered {
+    line-height: 44px !important;
+    padding: 0 !important;
+    color: var(--page-ink);
+}
+
+.select2-container--default .select2-selection--single .select2-selection__arrow {
+    height: 42px !important;
+}
+
+.select2-container--default.select2-container--focus .select2-selection--single,
+.select2-container--default.select2-container--open .select2-selection--single {
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.18);
+}
+
+.select2-dropdown {
+    border-radius: 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: var(--card-shadow);
+    overflow: hidden;
+}
+
+.select2-container--default .select2-results__option--highlighted[aria-selected] {
+    background: var(--accent) !important;
+}
+
+.select2-search--dropdown .select2-search__field {
+    border-radius: 8px !important;
+    border: 1px solid #e2e8f0 !important;
+    padding: 8px 10px !important;
+}
+
+/* ---- Flash alerts: cleaner, iconless, on-brand ---------------------- */
+.alert { box-shadow: var(--card-shadow); }
+.alert-success { background: rgba(34, 197, 94, 0.12); color: #15803d; border-color: rgba(34, 197, 94, 0.3); }
+.alert-danger  { background: rgba(239, 68, 68, 0.10); color: #b91c1c; border-color: rgba(239, 68, 68, 0.3); }
+.alert-warning { background: rgba(245, 158, 11, 0.12); color: #b45309; border-color: rgba(245, 158, 11, 0.3); }
+.alert-info    { background: var(--accent-soft); color: var(--accent-dark); border-color: rgba(14, 165, 233, 0.3); }
+
+/* ---- Empty-state helper -------------------------------------------- */
+.empty-state {
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--page-ink-soft);
+}
+
+.empty-state .empty-emoji { font-size: 2rem; display: block; margin-bottom: 8px; }
+
+/* ---- Global smooth scrollbars -------------------------------------- */
+* { scrollbar-width: thin; scrollbar-color: rgba(148,163,184,0.5) transparent; }

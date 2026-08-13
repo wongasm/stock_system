@@ -297,6 +297,19 @@
     });
 
     window.addEventListener("resize", applyLayout);
+
+    // Highlight the current page in the sidebar
+    (function () {
+        const here = window.location.pathname.replace(/\/+$/, "");
+        document.querySelectorAll("#sidebar .nav-link-custom").forEach(link => {
+            const target = link.getAttribute("href").replace(/\/+$/, "");
+            if (target && target === here) {
+                link.classList.add("active");
+                const group = link.closest("details.nav-group");
+                if (group) group.open = true;
+            }
+        });
+    })();
 </script>
 
 </body>
