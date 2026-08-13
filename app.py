@@ -649,6 +649,37 @@ def dashboard():
     unpaid_inc_gst = (unpaid_ex_gst * Decimal("1.10")).quantize(Decimal("0.01"))
     unpaid_invoice_count = len({r.invoice_no for r in unpaid_records})
 
+    # ---- Central Kitchen weekly invoiced totals (last 6 weeks, inc GST) ---
+    WEEKS = 6
+    current_monday = today - timedelta(days=today.weekday())
+    week_starts = [current_monday - timedelta(weeks=(WEEKS - 1 - i)) for i in range(WEEKS)]
+    earliest_str = week_starts[0].strftime("%Y-%m-%d")
+
+    ck_records = StockOutRecord.query.filter(StockOutRecord.date >= earliest_str).all()
+    ck_totals = {ws: Decimal("0") for ws in week_starts}
+    for r in ck_records:
+        try:
+            record_date = datetime.strptime(str(r.date), "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        week_key = record_date - timedelta(days=record_date.weekday())
+        if week_key in ck_totals:
+            ck_totals[week_key] += Decimal(str(r.selling_price or 0)) * Decimal(str(r.quantity or 0))
+
+    ck_weeks = []
+    for ws in week_starts:
+        inc_gst = (ck_totals[ws] * Decimal("1.10")).quantize(Decimal("0.01"))
+        week_end = ws + timedelta(days=6)
+        ck_weeks.append({
+            "label": ws.strftime("%d %b"),
+            "range": f"{ws.strftime('%d %b')} – {week_end.strftime('%d %b')}",
+            "total": float(inc_gst)
+        })
+    max_ck = max((w["total"] for w in ck_weeks), default=0) or 1
+    for w in ck_weeks:
+        w["pct"] = round(w["total"] / max_ck * 100, 1)
+    ck_this_week = ck_weeks[-1]["total"] if ck_weeks else 0.0
+
     return render_template(
         "dashboard.html",
         square_ok=square_ok,
@@ -666,7 +697,9 @@ def dashboard():
         low_stock_items=low_stock_items,
         low_stock_count=len(low_stock_items),
         unpaid_inc_gst=unpaid_inc_gst,
-        unpaid_invoice_count=unpaid_invoice_count
+        unpaid_invoice_count=unpaid_invoice_count,
+        ck_weeks=ck_weeks,
+        ck_this_week=ck_this_week
     )
 
 @app.route("/", methods=["GET", "POST"])

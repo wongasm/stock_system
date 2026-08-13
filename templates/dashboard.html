@@ -85,6 +85,35 @@
 
     </div>
 
+    <!-- ===== Central Kitchen weekly invoiced ===== -->
+    <div class="card app-card p-4" style="margin-bottom: 18px;">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h3 class="dash-card-title mb-0">Central Kitchen — Weekly Invoiced</h3>
+            <div class="stat-inline" style="padding: 8px 16px;">
+                <span class="stat-inline-label" style="margin-right: 12px;">This week</span>
+                <span class="stat-inline-value" style="font-size: 1.2rem;">${{ "%.2f"|format(ck_this_week) }}</span>
+            </div>
+        </div>
+        {% if ck_weeks %}
+        <div class="trend">
+            {% for w in ck_weeks %}
+            <div class="trend-col">
+                <div class="trend-amt">${{ "%.0f"|format(w.total) }}</div>
+                <div class="trend-bar-track">
+                    <div class="trend-bar ck" style="height: {{ w.pct }}%;" title="{{ w.range }}"></div>
+                </div>
+                <div class="trend-label">{{ w.label }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="small-text text-muted mt-2">
+            GST-inclusive. Grouped by week (starting Monday), based on stock invoiced out to stores.
+        </div>
+        {% else %}
+        <div class="empty-state"><span class="empty-emoji">🏭</span>No invoices recorded in the last 6 weeks.</div>
+        {% endif %}
+    </div>
+
     <!-- ===== ROW: needs attention + stock value / top sellers ===== -->
     <div class="dash-grid">
 

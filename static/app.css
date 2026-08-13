@@ -580,6 +580,11 @@ a:hover {
 
 .trend-label { font-size: 0.75rem; color: #94a3b8; font-weight: 600; }
 
+/* Central Kitchen bars — indigo to distinguish from retail sales */
+.trend-bar.ck {
+    background: linear-gradient(180deg, #6366f1, #8b5cf6);
+}
+
 /* Needs-attention rows */
 .attention-row {
     display: flex;
