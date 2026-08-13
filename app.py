@@ -549,6 +549,126 @@ with app.app_context():
     ensure_store_weekly_item_schema()
     ensure_ingredient_schema()
 
+@app.route("/dashboard", methods=["GET"])
+@login_required
+def dashboard():
+    """Admin landing page: at-a-glance widgets (today's sales, trends, alerts)."""
+    if current_user.role != "admin":
+        return redirect(url_for("blank_page"))
+
+    stores = ["Doncaster", "Lonsdale", "Clayton", "Glen Waverley"]
+    today = datetime.utcnow().date()
+    week_start = today - timedelta(days=6)
+
+    start_utc = datetime.strptime(week_start.strftime("%Y-%m-%d") + " 00:00:00", "%Y-%m-%d %H:%M:%S") \
+        .replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    end_utc = datetime.strptime(today.strftime("%Y-%m-%d") + " 23:59:59", "%Y-%m-%d %H:%M:%S") \
+        .replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+
+    # ---- Live Square metrics (best-effort: never break the page) ----------
+    square_ok = True
+    today_revenue = 0.0
+    today_orders = 0
+    today_items = 0
+    store_today = {store: 0.0 for store in stores}
+    daily_revenue = {(week_start + timedelta(days=i)): 0.0 for i in range(7)}
+    top_items = defaultdict(int)
+
+    try:
+        for store in stores:
+            orders = fetch_sales_for_store(store, start_date=start_utc, end_date=end_utc)
+            for order in orders:
+                order_dt = parse_square_datetime(order.get("created_at"))
+                if not order_dt:
+                    continue
+                order_date = order_dt.date()
+                amount = (order.get("total_money", {}) or {}).get("amount", 0) / 100
+
+                if order_date in daily_revenue:
+                    daily_revenue[order_date] += amount
+
+                if order_date == today:
+                    today_revenue += amount
+                    today_orders += 1
+                    store_today[store] += amount
+                    for item in order.get("line_items", []) or []:
+                        try:
+                            qty = int(float(item.get("quantity", 0) or 0))
+                        except (ValueError, TypeError):
+                            qty = 0
+                        today_items += qty
+                        name = (item.get("name") or "").strip()
+                        if name:
+                            top_items[name] += qty
+    except Exception as exc:
+        square_ok = False
+        print("⚠️ Dashboard Square fetch failed:", exc)
+
+    avg_order_value = (today_revenue / today_orders) if today_orders else 0.0
+
+    # Build ordered structures for the template
+    store_sales_today = sorted(
+        [{"store": s, "revenue": round(store_today[s], 2)} for s in stores],
+        key=lambda x: x["revenue"], reverse=True
+    )
+    max_store_rev = max((row["revenue"] for row in store_sales_today), default=0) or 1
+
+    trend = [
+        {"label": d.strftime("%a"), "date": d.strftime("%d/%m"), "revenue": round(daily_revenue[d], 2)}
+        for d in sorted(daily_revenue.keys())
+    ]
+    max_trend_rev = max((row["revenue"] for row in trend), default=0) or 1
+
+    top_sellers = sorted(
+        [{"name": name, "qty": qty} for name, qty in top_items.items()],
+        key=lambda x: x["qty"], reverse=True
+    )[:5]
+
+    # ---- Instant local-DB metrics ----------------------------------------
+    ingredients = Ingredient.query.filter(Ingredient.is_archived == False).all()
+
+    total_stock_value = sum(
+        Decimal(str(i.quantity or 0)) * Decimal(str(i.price_per_unit or 0))
+        for i in ingredients
+    )
+
+    low_stock_items = []
+    for i in ingredients:
+        threshold = Decimal(str(i.threshold or 0))
+        quantity = Decimal(str(i.quantity or 0))
+        deficit = threshold - quantity
+        if threshold > 0 and deficit > 0:
+            low_stock_items.append({"name": i.name, "need": deficit, "supplier": i.supplier})
+    low_stock_items.sort(key=lambda x: x["need"], reverse=True)
+
+    unpaid_records = StockOutRecord.query.filter_by(paid=False).all()
+    unpaid_ex_gst = sum(
+        Decimal(str(r.selling_price or 0)) * Decimal(str(r.quantity or 0))
+        for r in unpaid_records
+    )
+    unpaid_inc_gst = (unpaid_ex_gst * Decimal("1.10")).quantize(Decimal("0.01"))
+    unpaid_invoice_count = len({r.invoice_no for r in unpaid_records})
+
+    return render_template(
+        "dashboard.html",
+        square_ok=square_ok,
+        today=today.strftime("%A, %d %B %Y"),
+        today_revenue=round(today_revenue, 2),
+        today_orders=today_orders,
+        today_items=today_items,
+        avg_order_value=round(avg_order_value, 2),
+        store_sales_today=store_sales_today,
+        max_store_rev=max_store_rev,
+        trend=trend,
+        max_trend_rev=max_trend_rev,
+        top_sellers=top_sellers,
+        total_stock_value=total_stock_value.quantize(Decimal("0.01")),
+        low_stock_items=low_stock_items,
+        low_stock_count=len(low_stock_items),
+        unpaid_inc_gst=unpaid_inc_gst,
+        unpaid_invoice_count=unpaid_invoice_count
+    )
+
 @app.route("/", methods=["GET", "POST"])
 @login_required
 def index():
@@ -2346,7 +2466,7 @@ def login():
         if user and user.check_password(form.password.data):
             login_user(user)
             if user.role == 'admin':
-                return redirect(url_for('index'))  # Full access
+                return redirect(url_for('dashboard'))  # Full access
             else:
                 return redirect(url_for('blank_page'))  # Restricted users go to a blank page
         else:
