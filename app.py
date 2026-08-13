@@ -804,7 +804,7 @@ def stock_in():
                     StoreInventory.ingredient_id == Ingredient.id,
                     StoreInventory.store_id == current_user.id
                 )
-            )
+            ).filter(Ingredient.is_archived == False)
 
             if supplier_filter:
                 ingredient_query = ingredient_query.filter(Ingredient.supplier == supplier_filter)
@@ -822,9 +822,9 @@ def stock_in():
             ]
         else:
             if supplier_filter:
-                ingredients = Ingredient.query.filter(Ingredient.supplier == supplier_filter).order_by(Ingredient.name).all()
+                ingredients = Ingredient.query.filter(Ingredient.is_archived == False, Ingredient.supplier == supplier_filter).order_by(Ingredient.name).all()
             else:
-                ingredients = Ingredient.query.order_by(Ingredient.name).all()
+                ingredients = Ingredient.query.filter(Ingredient.is_archived == False).order_by(Ingredient.name).all()
 
         suppliers = Supplier.query.order_by(Supplier.name).all()
 
@@ -911,11 +911,11 @@ def stock_in():
 def stock_out():
     supplier_filter = request.args.get("supplier")
 
-    # ✅ Get filtered ingredients (alphabetically ordered)
+    # ✅ Get filtered ingredients (alphabetically ordered, excluding archived)
     if supplier_filter:
-        ingredients = Ingredient.query.filter(Ingredient.supplier == supplier_filter).order_by(Ingredient.name).all()
+        ingredients = Ingredient.query.filter(Ingredient.is_archived == False, Ingredient.supplier == supplier_filter).order_by(Ingredient.name).all()
     else:
-        ingredients = Ingredient.query.order_by(Ingredient.name).all()
+        ingredients = Ingredient.query.filter(Ingredient.is_archived == False).order_by(Ingredient.name).all()
 
     suppliers = Supplier.query.all()
 
@@ -1498,7 +1498,7 @@ def manage_recipes():
                 ]
             }
 
-    ingredients = Ingredient.query.order_by(Ingredient.name.asc()).all()
+    ingredients = Ingredient.query.filter(Ingredient.is_archived == False).order_by(Ingredient.name.asc()).all()
     return render_template("recipes.html", recipes=recipes_data, ingredients=ingredients)
 
 @app.route("/sales_recipes", methods=["GET", "POST"])
@@ -1601,7 +1601,7 @@ def manage_sales_recipes():
                 ]
             }
 
-    ingredients = Ingredient.query.order_by(Ingredient.name.asc()).all()
+    ingredients = Ingredient.query.filter(Ingredient.is_archived == False).order_by(Ingredient.name.asc()).all()
     return render_template("sales_recipes.html", recipes=recipes_data, ingredients=ingredients)
 
 @app.route("/get_sales_recipe/<int:recipe_id>", methods=["GET"])
@@ -2188,7 +2188,7 @@ def quantity_made():
 
     # GET method
     recipes = Recipe.query.all()
-    ingredients = Ingredient.query.all()
+    ingredients = Ingredient.query.filter(Ingredient.is_archived == False).all()
     return render_template("quantity_made.html", recipes=recipes, ingredients=ingredients)
 
 @app.route("/edit_recipe/<int:recipe_id>", methods=["GET", "POST"])
@@ -2246,7 +2246,7 @@ def edit_recipe(recipe_id):
 
     # ✅ Load Recipe Ingredients for Editing
     recipe_ingredients = RecipeIngredient.query.filter_by(recipe_id=recipe.id).all()
-    ingredients = Ingredient.query.all()
+    ingredients = Ingredient.query.filter(Ingredient.is_archived == False).all()
 
     return render_template("edit_recipe.html", recipe=recipe, recipe_ingredients=recipe_ingredients, ingredients=ingredients)
 
@@ -2777,9 +2777,9 @@ def manage_thresholds():
                 if item_id in ingredient_map
             ]
         else:
-            ingredients = Ingredient.query.filter_by(weekly_stocktake=True).all()
+            ingredients = Ingredient.query.filter_by(weekly_stocktake=True, is_archived=False).all()
     else:
-        ingredients = Ingredient.query.filter_by(weekly_stocktake=True).all()
+        ingredients = Ingredient.query.filter_by(weekly_stocktake=True, is_archived=False).all()
 
     if request.method == "POST":
         store_id = request.form.get("store_id")
