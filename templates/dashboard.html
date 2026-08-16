@@ -7,9 +7,15 @@
     <div class="page-header">
         <div>
             <h1 class="page-title">Dashboard</h1>
-            <div class="page-subtitle">{{ today }}</div>
+            <div class="page-subtitle">
+                {{ today }}
+                · Sales data {% if data_age_seconds and data_age_seconds >= 60 %}updated {{ data_age_seconds // 60 }} min ago{% else %}up to date{% endif %}
+            </div>
         </div>
-        <a href="{{ url_for('sales_report') }}" class="btn app-btn-primary app-btn app-btn-auto">Full Sales Report →</a>
+        <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('dashboard', refresh=1) }}" class="btn app-btn-secondary app-btn app-btn-auto">↻ Refresh</a>
+            <a href="{{ url_for('sales_report') }}" class="btn app-btn-primary app-btn app-btn-auto">Full Sales Report →</a>
+        </div>
     </div>
 
     {% if not square_ok %}

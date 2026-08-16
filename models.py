@@ -288,3 +288,12 @@ class StockInRecord(db.Model):
     price = db.Column(db.Numeric(10, 2), nullable=False)
     quantity = db.Column(db.Numeric(10, 2), nullable=False)
     total_cost = db.Column(db.Numeric(10, 2), nullable=False)
+
+
+class ApiCache(db.Model):
+    """Time-to-live cache for expensive external API results (e.g. Square)."""
+    __tablename__ = "api_cache"
+    id = db.Column(db.Integer, primary_key=True)
+    cache_key = db.Column(db.String(191), unique=True, nullable=False, index=True)
+    payload = db.Column(db.Text, nullable=False)          # JSON string
+    fetched_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

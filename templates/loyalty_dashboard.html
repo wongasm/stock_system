@@ -12,6 +12,7 @@
                 {% if report.ok and report.program_status %}
                     · <span class="badge-soft">Program {{ report.program_status|lower }}</span>
                 {% endif %}
+                · {% if data_age_seconds and data_age_seconds >= 60 %}updated {{ data_age_seconds // 60 }} min ago{% else %}up to date{% endif %}
             </div>
         </div>
     </div>
@@ -31,7 +32,7 @@
                 <button type="submit" class="btn app-btn-primary app-btn app-btn-auto">Apply</button>
                 <a href="{{ url_for('loyalty_dashboard', start_date=this_week_start, end_date=today_str) }}"
                    class="btn app-btn-secondary app-btn app-btn-auto">This Week</a>
-                <a href="{{ url_for('loyalty_dashboard', start_date=start_date, end_date=end_date) }}"
+                <a href="{{ url_for('loyalty_dashboard', start_date=start_date, end_date=end_date, refresh=1) }}"
                    class="btn app-btn-secondary app-btn app-btn-auto">↻ Refresh</a>
             </div>
         </form>
