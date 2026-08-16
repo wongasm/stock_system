@@ -585,6 +585,44 @@ a:hover {
     background: linear-gradient(180deg, #6366f1, #8b5cf6);
 }
 
+/* Compact stat grid (loyalty card) */
+.mini-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+}
+
+.mini-stat {
+    background: rgba(148, 163, 184, 0.06);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 14px 16px;
+}
+
+.mini-stat .m-label {
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--page-ink-soft);
+    font-weight: 600;
+}
+
+.mini-stat .m-value {
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 700;
+    font-size: 1.5rem;
+    margin-top: 4px;
+    line-height: 1.1;
+}
+
+@media (max-width: 1100px) {
+    .mini-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 560px) {
+    .mini-grid { grid-template-columns: 1fr; }
+}
+
 /* Needs-attention rows */
 .attention-row {
     display: flex;

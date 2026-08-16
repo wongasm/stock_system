@@ -20,7 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError, OperationalError, IntegrityError
 from sqlalchemy import cast, Numeric, and_, inspect
 from flask_mail import Mail, Message
 from dotenv import load_dotenv
-from square_api import fetch_sales_for_store
+from square_api import fetch_sales_for_store, fetch_loyalty_summary, fetch_loyalty_report
 from pathlib import Path
 from square_helpers import ITEM_CATEGORY_MAP
 from freezer_pack_helpers import calculate_ingredients_for_freezer_pack
@@ -680,6 +680,11 @@ def dashboard():
         w["pct"] = round(w["total"] / max_ck * 100, 1)
     ck_this_week = ck_weeks[-1]["total"] if ck_weeks else 0.0
 
+    # ---- Loyalty summary (this week, merchant-wide, best-effort) ----------
+    loyalty_start_utc = datetime.strptime(current_monday.strftime("%Y-%m-%d") + " 00:00:00", "%Y-%m-%d %H:%M:%S") \
+        .replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    loyalty = fetch_loyalty_summary(loyalty_start_utc, end_utc, week_start=current_monday)
+
     return render_template(
         "dashboard.html",
         square_ok=square_ok,
@@ -699,7 +704,55 @@ def dashboard():
         unpaid_inc_gst=unpaid_inc_gst,
         unpaid_invoice_count=unpaid_invoice_count,
         ck_weeks=ck_weeks,
-        ck_this_week=ck_this_week
+        ck_this_week=ck_this_week,
+        loyalty=loyalty
+    )
+
+@app.route("/loyalty_dashboard", methods=["GET"])
+@login_required
+def loyalty_dashboard():
+    """Dedicated loyalty analytics page with weekly default + custom date range."""
+    if current_user.role != "admin":
+        return redirect(url_for("blank_page"))
+
+    start_date = request.args.get("start_date")
+    end_date = request.args.get("end_date")
+    today = datetime.utcnow().date()
+
+    if not start_date or not end_date:
+        # Default: current week starting Monday
+        monday = today - timedelta(days=today.weekday())
+        start_date = monday.strftime("%Y-%m-%d")
+        end_date = today.strftime("%Y-%m-%d")
+
+    try:
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d").date()
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d").date()
+    except ValueError:
+        flash("Invalid date range.", "danger")
+        return redirect(url_for("loyalty_dashboard"))
+
+    if start_dt > end_dt:
+        start_dt, end_dt = end_dt, start_dt
+        start_date, end_date = end_date, start_date
+
+    start_at = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S") \
+        .replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    end_at = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S") \
+        .replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+
+    report = fetch_loyalty_report(start_at, end_at, start_dt, end_dt)
+
+    days_span = (end_dt - start_dt).days + 1
+
+    return render_template(
+        "loyalty_dashboard.html",
+        report=report,
+        start_date=start_date,
+        end_date=end_date,
+        days_span=days_span,
+        this_week_start=(today - timedelta(days=today.weekday())).strftime("%Y-%m-%d"),
+        today_str=today.strftime("%Y-%m-%d")
     )
 
 @app.route("/", methods=["GET", "POST"])

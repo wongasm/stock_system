@@ -1,0 +1,203 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4 px-3">
+
+    <!-- Header -->
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Loyalty Dashboard</h1>
+            <div class="page-subtitle">
+                {{ start_date }} → {{ end_date }} ({{ days_span }} day{{ '' if days_span == 1 else 's' }})
+                {% if report.ok and report.program_status %}
+                    · <span class="badge-soft">Program {{ report.program_status|lower }}</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Date range controls -->
+    <div class="card app-card p-3 mb-4">
+        <form method="get" action="{{ url_for('loyalty_dashboard') }}" class="row g-3 align-items-end">
+            <div class="col-md-3 col-6">
+                <label class="form-label fw-semibold small-text">Start date</label>
+                <input type="date" name="start_date" value="{{ start_date }}" class="form-control" required>
+            </div>
+            <div class="col-md-3 col-6">
+                <label class="form-label fw-semibold small-text">End date</label>
+                <input type="date" name="end_date" value="{{ end_date }}" class="form-control" required>
+            </div>
+            <div class="col-md-6 col-12 d-flex gap-2 flex-wrap">
+                <button type="submit" class="btn app-btn-primary app-btn app-btn-auto">Apply</button>
+                <a href="{{ url_for('loyalty_dashboard', start_date=this_week_start, end_date=today_str) }}"
+                   class="btn app-btn-secondary app-btn app-btn-auto">This Week</a>
+                <a href="{{ url_for('loyalty_dashboard', start_date=start_date, end_date=end_date) }}"
+                   class="btn app-btn-secondary app-btn app-btn-auto">↻ Refresh</a>
+            </div>
+        </form>
+    </div>
+
+    {% if not report.ok %}
+    <div class="alert alert-warning">
+        Loyalty data couldn’t be loaded for this range. Check that the Square token has <strong>LOYALTY_READ</strong>,
+        or try a smaller date range.
+    </div>
+    {% endif %}
+
+    <!-- KPI strip -->
+    <div class="kpi-grid">
+        <div class="kpi-tile">
+            <div class="kpi-label">New Enrollees</div>
+            <div class="kpi-value">{{ report.new_enrollees }}</div>
+            <div class="kpi-foot">joined this range</div>
+        </div>
+        <div class="kpi-tile">
+            <div class="kpi-label">Rewards Redeemed</div>
+            <div class="kpi-value">{{ report.rewards_redeemed }}</div>
+            <div class="kpi-foot">prizes claimed</div>
+        </div>
+        <div class="kpi-tile">
+            <div class="kpi-label">Member Visits</div>
+            <div class="kpi-value">{{ report.member_visits }}</div>
+            <div class="kpi-foot">{{ report.member_visit_share }}% of all visits</div>
+        </div>
+        <div class="kpi-tile">
+            <div class="kpi-label">Total Members</div>
+            <div class="kpi-value">{{ "{:,}".format(report.total_members) }}</div>
+            <div class="kpi-foot">all-time</div>
+        </div>
+    </div>
+
+    <!-- Visits comparison + Spend -->
+    <div class="dash-grid">
+
+        <div class="card app-card p-4">
+            <h3 class="dash-card-title">Visits — Members vs Regular</h3>
+            <div class="bar-row">
+                <div class="bar-label">Members</div>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width: {{ (report.member_visits / report.total_visits * 100) if report.total_visits else 0 }}%;"></div>
+                </div>
+                <div class="bar-value">{{ report.member_visits }}</div>
+            </div>
+            <div class="bar-row">
+                <div class="bar-label">Regular</div>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width: {{ (report.regular_visits / report.total_visits * 100) if report.total_visits else 0 }}%; background: linear-gradient(90deg,#94a3b8,#cbd5e1);"></div>
+                </div>
+                <div class="bar-value">{{ report.regular_visits }}</div>
+            </div>
+            <div class="small-text text-muted mt-2">
+                {{ report.member_visit_share }}% of {{ report.total_visits }} total visits came from loyalty members.
+            </div>
+        </div>
+
+        <div class="card app-card p-4">
+            <h3 class="dash-card-title">Spend & Revenue</h3>
+            {% set m = report.avg_member_spend %}
+            {% set r = report.avg_regular_spend %}
+            {% set mx = (m if m > r else r) or 1 %}
+            <div class="bar-row">
+                <div class="bar-label">Member $</div>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width: {{ m / mx * 100 }}%;"></div>
+                </div>
+                <div class="bar-value">${{ "%.2f"|format(m) }}</div>
+            </div>
+            <div class="bar-row">
+                <div class="bar-label">Regular $</div>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width: {{ r / mx * 100 }}%; background: linear-gradient(90deg,#94a3b8,#cbd5e1);"></div>
+                </div>
+                <div class="bar-value">${{ "%.2f"|format(r) }}</div>
+            </div>
+            <div class="stat-inline mt-3">
+                <span class="stat-inline-label">Loyalty revenue share</span>
+                <span class="stat-inline-value">{{ report.loyalty_revenue_share }}%</span>
+            </div>
+            <div class="small-text text-muted mt-2">
+                ${{ "%.2f"|format(report.member_revenue) }} of ${{ "%.2f"|format(report.total_revenue) }} total revenue.
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Prizes + Points economy -->
+    <div class="dash-grid">
+
+        <div class="card app-card p-4">
+            <h3 class="dash-card-title">Redeemed Prizes</h3>
+            {% if report.prize_breakdown %}
+            <div class="table-responsive">
+                <table class="table mb-0">
+                    <thead class="app-thead">
+                        <tr><th>Prize</th><th class="text-end">Times redeemed</th><th class="text-end">{{ report.points_name }}</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for prize in report.prize_breakdown %}
+                        <tr>
+                            <td class="fw-semibold">{{ prize.name }}</td>
+                            <td class="text-end">{{ prize.count }}</td>
+                            <td class="text-end">{{ "{:,}".format(prize.points) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="empty-state"><span class="empty-emoji">🎁</span>No prizes redeemed in this range.</div>
+            {% endif %}
+        </div>
+
+        <div class="card app-card p-4">
+            <h3 class="dash-card-title">Points Economy</h3>
+            <div class="mini-grid" style="grid-template-columns: repeat(3, 1fr);">
+                <div class="mini-stat">
+                    <div class="m-label">Issued</div>
+                    <div class="m-value">{{ "{:,}".format(report.points_issued) }}</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="m-label">Redeemed</div>
+                    <div class="m-value">{{ "{:,}".format(report.points_redeemed) }}</div>
+                </div>
+                <div class="mini-stat">
+                    <div class="m-label">Outstanding</div>
+                    <div class="m-value">{{ "{:,}".format(report.outstanding_points) }}</div>
+                </div>
+            </div>
+            <div class="small-text text-muted mt-3">
+                “Outstanding” is the total unredeemed {{ report.points_name|lower }} balance across all members —
+                your current loyalty liability.
+            </div>
+        </div>
+
+    </div>
+
+    <!-- By store -->
+    <div class="card app-card p-4 mb-5">
+        <h3 class="dash-card-title">By Store</h3>
+        <div class="table-responsive">
+            <table class="table mb-0">
+                <thead class="app-thead">
+                    <tr><th>Store</th><th class="text-end">Total visits</th><th class="text-end">Member visits</th><th class="text-end">Redemptions</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in report.by_store %}
+                    <tr>
+                        <td class="fw-semibold">{{ row.store }}</td>
+                        <td class="text-end">{{ row.visits }}</td>
+                        <td class="text-end">{{ row.member_visits }}</td>
+                        <td class="text-end">{{ row.redemptions }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="small-text text-muted mt-2">
+            Note: new enrollees aren’t location-tagged by Square, so they’re shown only as a single total above.
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}

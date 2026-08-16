@@ -114,6 +114,38 @@
         {% endif %}
     </div>
 
+    <!-- ===== Loyalty (this week) ===== -->
+    <div class="card app-card p-4" style="margin-bottom: 18px;">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h3 class="dash-card-title mb-0">Loyalty — This Week</h3>
+            {% if loyalty.ok and loyalty.program_status %}
+                <span class="badge-soft">Program {{ loyalty.program_status|lower }}</span>
+            {% endif %}
+        </div>
+        {% if loyalty.ok %}
+        <div class="mini-grid">
+            <div class="mini-stat">
+                <div class="m-label">{{ loyalty.points_name }} Issued</div>
+                <div class="m-value">{{ "{:,}".format(loyalty.points_issued) }}</div>
+            </div>
+            <div class="mini-stat">
+                <div class="m-label">Rewards Redeemed</div>
+                <div class="m-value">{{ loyalty.rewards_redeemed }}</div>
+            </div>
+            <div class="mini-stat">
+                <div class="m-label">Total Members</div>
+                <div class="m-value">{{ "{:,}".format(loyalty.total_members) }}</div>
+            </div>
+            <div class="mini-stat">
+                <div class="m-label">New Members</div>
+                <div class="m-value">+{{ loyalty.new_members }}</div>
+            </div>
+        </div>
+        {% else %}
+        <div class="empty-state"><span class="empty-emoji">🎟️</span>Loyalty data couldn’t be loaded right now.</div>
+        {% endif %}
+    </div>
+
     <!-- ===== ROW: needs attention + stock value / top sellers ===== -->
     <div class="dash-grid">
 

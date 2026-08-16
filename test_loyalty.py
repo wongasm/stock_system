@@ -83,8 +83,70 @@ def check_store(store_name):
         print("❌ Exception reading loyalty accounts:", e)
 
 
+def print_loyalty_numbers():
+    """Print the real loyalty summary the dashboard widget will show."""
+    from datetime import date, timedelta
+    from square_api import fetch_loyalty_summary
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    start_at = f"{monday.isoformat()}T00:00:00Z"
+    end_at = f"{today.isoformat()}T23:59:59Z"
+
+    print("\n" + "=" * 60)
+    print(f"LOYALTY NUMBERS  (week of {monday.strftime('%d %b %Y')} → today)")
+    print("=" * 60)
+    s = fetch_loyalty_summary(start_at, end_at, week_start=monday, verbose=True)
+    if not s["ok"]:
+        print("❌ Could not build loyalty summary (see messages above).")
+        return
+    print(f"Program status     : {s['program_status']}")
+    print(f"Total members      : {s['total_members']:,}")
+    print(f"New members (wk)    : +{s['new_members']}")
+    print(f"{s['points_name']} issued (wk) : {s['points_issued']:,}")
+    print(f"Rewards redeemed(wk): {s['rewards_redeemed']}")
+
+
+def print_loyalty_report():
+    """Exercise the full Loyalty-dashboard report for this week and print it."""
+    from datetime import date, timedelta
+    from square_api import fetch_loyalty_report
+
+    today = date.today()
+    monday = today - timedelta(days=today.weekday())
+    start_at = f"{monday.isoformat()}T00:00:00Z"
+    end_at = f"{today.isoformat()}T23:59:59Z"
+
+    print("\n" + "=" * 60)
+    print(f"LOYALTY REPORT  (week of {monday.strftime('%d %b %Y')} → today)")
+    print("=" * 60)
+    r = fetch_loyalty_report(start_at, end_at, monday, today, verbose=True)
+    if not r["ok"]:
+        print("❌ Report failed — see messages above.")
+        return
+    print(f"New enrollees      : {r['new_enrollees']}")
+    print(f"Total members      : {r['total_members']:,}")
+    print(f"Rewards redeemed   : {r['rewards_redeemed']}")
+    for p in r["prize_breakdown"]:
+        print(f"    - {p['name']}: {p['count']} ({p['points']} pts)")
+    print(f"Points issued      : {r['points_issued']:,}")
+    print(f"Points redeemed    : {r['points_redeemed']:,}")
+    print(f"Outstanding points : {r['outstanding_points']:,}")
+    print(f"Visits (total)     : {r['total_visits']}  member={r['member_visits']} regular={r['regular_visits']} ({r['member_visit_share']}% member)")
+    print(f"Avg spend          : member=${r['avg_member_spend']}  regular=${r['avg_regular_spend']}")
+    print(f"Loyalty rev share  : {r['loyalty_revenue_share']}%")
+    for s in r["by_store"]:
+        print(f"    {s['store']}: {s['visits']} visits, {s['member_visits']} member, {s['redemptions']} redemptions")
+
+
 if __name__ == "__main__":
-    targets = [sys.argv[1]] if len(sys.argv) > 1 else STORES
-    for store in targets:
-        check_store(store)
+    if len(sys.argv) > 1 and sys.argv[1] == "--report":
+        print_loyalty_report()
+    elif len(sys.argv) > 1 and sys.argv[1] == "--numbers":
+        print_loyalty_numbers()
+    else:
+        targets = [sys.argv[1]] if len(sys.argv) > 1 else STORES
+        for store in targets:
+            check_store(store)
+        print_loyalty_numbers()
     print("\nDone.")
