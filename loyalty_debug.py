@@ -79,7 +79,7 @@ error = None
 while True:
     body = {
         "query": {"filter": {"date_time_filter": {"created_at": {"start_at": start_at, "end_at": end_at}}}},
-        "limit": 200,
+        "limit": 30,
     }
     if cursor:
         body["cursor"] = cursor
