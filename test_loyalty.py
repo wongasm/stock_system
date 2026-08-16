@@ -124,19 +124,18 @@ def print_loyalty_report():
     if not r["ok"]:
         print("❌ Report failed — see messages above.")
         return
-    print(f"New enrollees      : {r['new_enrollees']}")
-    print(f"Total members      : {r['total_members']:,}")
-    print(f"Rewards redeemed   : {r['rewards_redeemed']}")
+    print(f"New enrollees        : {r['new_enrollees']}")
+    print(f"Total members        : {r['total_members']:,}")
+    print(f"Member transactions  : {r['member_transactions']:,}")
+    print(f"{r['points_name']} issued : {r['points_issued']:,}  (avg/txn {r['avg_points_per_txn']})")
+    print(f"Rewards redeemed     : {r['rewards_redeemed']}")
     for p in r["prize_breakdown"]:
         print(f"    - {p['name']}: {p['count']} ({p['points']} pts)")
-    print(f"Points issued      : {r['points_issued']:,}")
-    print(f"Points redeemed    : {r['points_redeemed']:,}")
-    print(f"Outstanding points : {r['outstanding_points']:,}")
-    print(f"Visits (total)     : {r['total_visits']}  member={r['member_visits']} regular={r['regular_visits']} ({r['member_visit_share']}% member)")
-    print(f"Avg spend          : member=${r['avg_member_spend']}  regular=${r['avg_regular_spend']}")
-    print(f"Loyalty rev share  : {r['loyalty_revenue_share']}%")
-    for s in r["by_store"]:
-        print(f"    {s['store']}: {s['visits']} visits, {s['member_visits']} member, {s['redemptions']} redemptions")
+    print(f"Points redeemed      : {r['points_redeemed']:,}")
+    print(f"Outstanding points   : {r['outstanding_points']:,}")
+    print(f"Members can redeem   : {r['members_can_redeem']} (min tier {r['min_tier_points']})")
+    for t in r["tier_reach"]:
+        print(f"    {t['name']} ({t['points']}): {t['members_reached']} members ({t['pct']}%)")
 
 
 if __name__ == "__main__":

@@ -53,77 +53,66 @@
             <div class="kpi-foot">joined this range</div>
         </div>
         <div class="kpi-tile">
+            <div class="kpi-label">Member Visits</div>
+            <div class="kpi-value">{{ "{:,}".format(report.member_transactions) }}</div>
+            <div class="kpi-foot">point-earning transactions</div>
+        </div>
+        <div class="kpi-tile">
+            <div class="kpi-label">{{ report.points_name }} Issued</div>
+            <div class="kpi-value">{{ "{:,}".format(report.points_issued) }}</div>
+            <div class="kpi-foot">≈ ${{ "{:,}".format(report.points_issued) }} member spend</div>
+        </div>
+        <div class="kpi-tile">
             <div class="kpi-label">Rewards Redeemed</div>
             <div class="kpi-value">{{ report.rewards_redeemed }}</div>
             <div class="kpi-foot">prizes claimed</div>
         </div>
-        <div class="kpi-tile">
-            <div class="kpi-label">Member Visits</div>
-            <div class="kpi-value">{{ report.member_visits }}</div>
-            <div class="kpi-foot">{{ report.member_visit_share }}% of all visits</div>
-        </div>
-        <div class="kpi-tile">
-            <div class="kpi-label">Total Members</div>
-            <div class="kpi-value">{{ "{:,}".format(report.total_members) }}</div>
-            <div class="kpi-foot">all-time</div>
-        </div>
     </div>
 
-    <!-- Visits comparison + Spend -->
+    <!-- Member spend + Points economy -->
     <div class="dash-grid">
 
         <div class="card app-card p-4">
-            <h3 class="dash-card-title">Visits — Members vs Regular</h3>
-            <div class="bar-row">
-                <div class="bar-label">Members</div>
-                <div class="bar-track">
-                    <div class="bar-fill" style="width: {{ (report.member_visits / report.total_visits * 100) if report.total_visits else 0 }}%;"></div>
-                </div>
-                <div class="bar-value">{{ report.member_visits }}</div>
+            <h3 class="dash-card-title">Estimated Member Spend</h3>
+            <div class="stat-inline">
+                <span class="stat-inline-label">This range</span>
+                <span class="stat-inline-value">${{ "{:,}".format(report.points_issued) }}</span>
             </div>
-            <div class="bar-row">
-                <div class="bar-label">Regular</div>
-                <div class="bar-track">
-                    <div class="bar-fill" style="width: {{ (report.regular_visits / report.total_visits * 100) if report.total_visits else 0 }}%; background: linear-gradient(90deg,#94a3b8,#cbd5e1);"></div>
-                </div>
-                <div class="bar-value">{{ report.regular_visits }}</div>
+            <div class="stat-inline mt-3">
+                <span class="stat-inline-label">Avg per visit</span>
+                <span class="stat-inline-value">${{ "%.2f"|format(report.avg_points_per_txn) }}</span>
             </div>
-            <div class="small-text text-muted mt-2">
-                {{ report.member_visit_share }}% of {{ report.total_visits }} total visits came from loyalty members.
+            <div class="small-text text-muted mt-3">
+                Members earn 1 {{ report.points_name[:-1] if report.points_name.endswith('s') else report.points_name }}
+                per $1 spent (before tax), so {{ report.points_name|lower }} issued ≈ member dollars spent.
             </div>
         </div>
 
         <div class="card app-card p-4">
-            <h3 class="dash-card-title">Spend & Revenue</h3>
-            {% set m = report.avg_member_spend %}
-            {% set r = report.avg_regular_spend %}
-            {% set mx = (m if m > r else r) or 1 %}
-            <div class="bar-row">
-                <div class="bar-label">Member $</div>
-                <div class="bar-track">
-                    <div class="bar-fill" style="width: {{ m / mx * 100 }}%;"></div>
+            <h3 class="dash-card-title">{{ report.points_name }} Economy</h3>
+            <div class="mini-grid" style="grid-template-columns: repeat(3, 1fr);">
+                <div class="mini-stat">
+                    <div class="m-label">Issued</div>
+                    <div class="m-value">{{ "{:,}".format(report.points_issued) }}</div>
                 </div>
-                <div class="bar-value">${{ "%.2f"|format(m) }}</div>
-            </div>
-            <div class="bar-row">
-                <div class="bar-label">Regular $</div>
-                <div class="bar-track">
-                    <div class="bar-fill" style="width: {{ r / mx * 100 }}%; background: linear-gradient(90deg,#94a3b8,#cbd5e1);"></div>
+                <div class="mini-stat">
+                    <div class="m-label">Redeemed</div>
+                    <div class="m-value">{{ "{:,}".format(report.points_redeemed) }}</div>
                 </div>
-                <div class="bar-value">${{ "%.2f"|format(r) }}</div>
+                <div class="mini-stat">
+                    <div class="m-label">Outstanding</div>
+                    <div class="m-value">{{ "{:,}".format(report.outstanding_points) }}</div>
+                </div>
             </div>
-            <div class="stat-inline mt-3">
-                <span class="stat-inline-label">Loyalty revenue share</span>
-                <span class="stat-inline-value">{{ report.loyalty_revenue_share }}%</span>
-            </div>
-            <div class="small-text text-muted mt-2">
-                ${{ "%.2f"|format(report.member_revenue) }} of ${{ "%.2f"|format(report.total_revenue) }} total revenue.
+            <div class="small-text text-muted mt-3">
+                “Outstanding” is the total unredeemed {{ report.points_name|lower }} across all
+                {{ "{:,}".format(report.total_members) }} members — your current liability.
             </div>
         </div>
 
     </div>
 
-    <!-- Prizes + Points economy -->
+    <!-- Prizes + Rewards within reach -->
     <div class="dash-grid">
 
         <div class="card app-card p-4">
@@ -132,7 +121,7 @@
             <div class="table-responsive">
                 <table class="table mb-0">
                     <thead class="app-thead">
-                        <tr><th>Prize</th><th class="text-end">Times redeemed</th><th class="text-end">{{ report.points_name }}</th></tr>
+                        <tr><th>Prize</th><th class="text-end">Redeemed</th><th class="text-end">{{ report.points_name }}</th></tr>
                     </thead>
                     <tbody>
                         {% for prize in report.prize_breakdown %}
@@ -151,52 +140,52 @@
         </div>
 
         <div class="card app-card p-4">
-            <h3 class="dash-card-title">Points Economy</h3>
-            <div class="mini-grid" style="grid-template-columns: repeat(3, 1fr);">
-                <div class="mini-stat">
-                    <div class="m-label">Issued</div>
-                    <div class="m-value">{{ "{:,}".format(report.points_issued) }}</div>
+            <h3 class="dash-card-title">Rewards Within Reach</h3>
+            <div class="stat-inline mb-3">
+                <span class="stat-inline-label">Members who can claim a reward now</span>
+                <span class="stat-inline-value">{{ "{:,}".format(report.members_can_redeem) }}</span>
+            </div>
+            {% for t in report.tier_reach %}
+            <div class="reach-row">
+                <div class="reach-head">
+                    <span class="reach-name">{{ t.name }} <span class="muted">· {{ t.points }} {{ report.points_name|lower }}</span></span>
+                    <span class="reach-val">{{ "{:,}".format(t.members_reached) }} ({{ t.pct }}%)</span>
                 </div>
-                <div class="mini-stat">
-                    <div class="m-label">Redeemed</div>
-                    <div class="m-value">{{ "{:,}".format(report.points_redeemed) }}</div>
-                </div>
-                <div class="mini-stat">
-                    <div class="m-label">Outstanding</div>
-                    <div class="m-value">{{ "{:,}".format(report.outstanding_points) }}</div>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width: {{ t.pct }}%;"></div>
                 </div>
             </div>
-            <div class="small-text text-muted mt-3">
-                “Outstanding” is the total unredeemed {{ report.points_name|lower }} balance across all members —
-                your current loyalty liability.
-            </div>
+            {% endfor %}
+            <div class="small-text text-muted mt-2">How many members currently have enough {{ report.points_name|lower }} for each prize.</div>
         </div>
 
     </div>
 
-    <!-- By store -->
+    <!-- Top members -->
     <div class="card app-card p-4 mb-5">
-        <h3 class="dash-card-title">By Store</h3>
+        <h3 class="dash-card-title">Top Members (by balance)</h3>
+        {% if report.top_members %}
         <div class="table-responsive">
             <table class="table mb-0">
                 <thead class="app-thead">
-                    <tr><th>Store</th><th class="text-end">Total visits</th><th class="text-end">Member visits</th><th class="text-end">Redemptions</th></tr>
+                    <tr><th>#</th><th>Phone</th><th class="text-end">Balance</th><th class="text-end">Lifetime</th></tr>
                 </thead>
                 <tbody>
-                    {% for row in report.by_store %}
+                    {% for m in report.top_members %}
                     <tr>
-                        <td class="fw-semibold">{{ row.store }}</td>
-                        <td class="text-end">{{ row.visits }}</td>
-                        <td class="text-end">{{ row.member_visits }}</td>
-                        <td class="text-end">{{ row.redemptions }}</td>
+                        <td class="fw-semibold">{{ loop.index }}</td>
+                        <td class="mono">{{ m.phone or "—" }}</td>
+                        <td class="text-end fw-semibold">{{ "{:,}".format(m.balance) }}</td>
+                        <td class="text-end">{{ "{:,}".format(m.lifetime) }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
-        <div class="small-text text-muted mt-2">
-            Note: new enrollees aren’t location-tagged by Square, so they’re shown only as a single total above.
-        </div>
+        <div class="small-text text-muted mt-2">Your most engaged members — handy for a “treat yourself” message.</div>
+        {% else %}
+        <div class="empty-state"><span class="empty-emoji">👑</span>No members found.</div>
+        {% endif %}
     </div>
 
 </div>

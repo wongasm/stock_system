@@ -585,6 +585,18 @@ a:hover {
     background: linear-gradient(180deg, #6366f1, #8b5cf6);
 }
 
+/* Rewards-within-reach rows */
+.reach-row { margin-bottom: 14px; }
+.reach-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.reach-name { font-size: 0.88rem; font-weight: 600; }
+.reach-val { font-size: 0.82rem; font-weight: 600; color: var(--page-ink-soft); white-space: nowrap; }
+
 /* Compact stat grid (loyalty card) */
 .mini-grid {
     display: grid;

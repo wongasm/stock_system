@@ -254,23 +254,17 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, ver
         "points_name": "Points",
         "new_enrollees": 0,
         "total_members": 0,
+        "member_transactions": 0,   # accrual events ~ member visits
+        "points_issued": 0,         # ~ member dollars spent (1 pt = $1)
+        "avg_points_per_txn": 0.0,  # ~ avg member spend
         "rewards_redeemed": 0,
         "prize_breakdown": [],
-        "points_issued": 0,
         "points_redeemed": 0,
         "outstanding_points": 0,
-        "member_transactions": 0,
-        "total_visits": 0,
-        "member_visits": 0,
-        "regular_visits": 0,
-        "member_visit_share": 0.0,
-        "total_revenue": 0.0,
-        "member_revenue": 0.0,
-        "regular_revenue": 0.0,
-        "loyalty_revenue_share": 0.0,
-        "avg_member_spend": 0.0,
-        "avg_regular_spend": 0.0,
-        "by_store": [],
+        "members_can_redeem": 0,
+        "min_tier_points": 0,
+        "tier_reach": [],
+        "top_members": [],
     }
 
     token = _first_loyalty_token()
@@ -280,11 +274,11 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, ver
         return report
 
     client = Client(access_token=token, environment="production")
-    location_to_store = _store_location_map()
 
     try:
-        # --- Program: status, points name, reward-tier names --------------
+        # --- Program: status, points name, reward tiers -------------------
         tier_names = {}
+        tiers = []  # [{"name", "points"}], cheapest first
         try:
             prog = client.loyalty.retrieve_loyalty_program(program_id="main")
             if prog.is_success():
@@ -294,15 +288,17 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, ver
                 report["points_name"] = terminology.get("other") or "Points"
                 for tier in program.get("reward_tiers", []) or []:
                     tier_names[tier.get("id")] = tier.get("name") or "Reward"
+                    tiers.append({"name": tier.get("name") or "Reward", "points": tier.get("points", 0) or 0})
+                tiers.sort(key=lambda t: t["points"])
+                if tiers:
+                    report["min_tier_points"] = tiers[0]["points"]
         except Exception as exc:
             if verbose:
                 print("ℹ️ Program retrieve failed:", exc)
 
-        # --- Events: points issued, redemptions, member order ids ---------
-        loyalty_order_ids = set()
-        redemptions = []  # list of reward_id
-        redemptions_by_store = defaultdict(int)
-        member_visits_by_store = defaultdict(int)
+        # --- Events: accruals (points issued + member transactions) and
+        #     redemptions. This merchant accrues mostly via ADJUST_POINTS. ---
+        redemptions = []  # reward_ids
         cursor = None
         while True:
             body = {
@@ -319,35 +315,23 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, ver
             events = ev_res.body.get("events", []) or ev_res.body.get("loyalty_events", []) or []
             for ev in events:
                 etype = ev.get("type")
-                store = location_to_store.get(ev.get("location_id"))
                 if etype == "ACCUMULATE_POINTS":
-                    ap = ev.get("accumulate_points", {}) or {}
-                    report["points_issued"] += ap.get("points", 0) or 0
+                    report["points_issued"] += (ev.get("accumulate_points", {}) or {}).get("points", 0) or 0
                     report["member_transactions"] += 1
-                    oid = ap.get("order_id")
-                    if oid:
-                        loyalty_order_ids.add(oid)
-                    if store:
-                        member_visits_by_store[store] += 1
                 elif etype == "ADJUST_POINTS":
-                    # Franchise accrues points via ADJUST_POINTS; positive = issued,
-                    # and each such event is one member earning-transaction.
                     pts = (ev.get("adjust_points", {}) or {}).get("points", 0) or 0
                     if pts > 0:
                         report["points_issued"] += pts
                         report["member_transactions"] += 1
-                    elif pts < 0:
-                        report["points_redeemed"] += abs(pts)
                 elif etype == "REDEEM_REWARD":
-                    rr = ev.get("redeem_reward", {}) or {}
-                    reward_id = rr.get("reward_id")
-                    redemptions.append(reward_id)
+                    redemptions.append((ev.get("redeem_reward", {}) or {}).get("reward_id"))
                     report["rewards_redeemed"] += 1
-                    if store:
-                        redemptions_by_store[store] += 1
             cursor = ev_res.body.get("cursor")
             if not cursor:
                 break
+
+        if report["member_transactions"]:
+            report["avg_points_per_txn"] = round(report["points_issued"] / report["member_transactions"], 1)
 
         # --- Resolve redeemed rewards -> prize names + points -------------
         reward_cache = {}
@@ -357,7 +341,7 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, ver
                 prize_counts["Unknown"]["count"] += 1
                 continue
             if reward_id not in reward_cache:
-                name, points = "Unknown", 0
+                name, points = "Reward", 0
                 try:
                     rw = client.loyalty.retrieve_loyalty_reward(reward_id=reward_id)
                     if rw.is_success():
@@ -377,7 +361,9 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, ver
             key=lambda x: x["count"], reverse=True
         )
 
-        # --- Accounts: total members, new enrollees, outstanding points ---
+        # --- Accounts: members, enrollees, liability, reward-reach, top ----
+        tier_reach_counts = {t["points"]: 0 for t in tiers}
+        members = []  # (balance, lifetime, phone) for top-members list
         cursor = None
         while True:
             body = {"limit": 200}
@@ -390,53 +376,42 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, ver
                 break
             for acc in acc_res.body.get("loyalty_accounts", []) or []:
                 report["total_members"] += 1
-                report["outstanding_points"] += acc.get("balance", 0) or 0
+                balance = acc.get("balance", 0) or 0
+                report["outstanding_points"] += balance
+
                 created = _parse_iso(acc.get("created_at"))
                 if created and range_start_date <= created.date() <= range_end_date:
                     report["new_enrollees"] += 1
+
+                if report["min_tier_points"] and balance >= report["min_tier_points"]:
+                    report["members_can_redeem"] += 1
+                for tp in tier_reach_counts:
+                    if balance >= tp:
+                        tier_reach_counts[tp] += 1
+
+                phone = (acc.get("mapping", {}) or {}).get("phone_number")
+                members.append((balance, acc.get("lifetime_points", 0) or 0, phone))
             cursor = acc_res.body.get("cursor")
             if not cursor:
                 break
 
-        # --- Orders: total visits + revenue, split member vs regular ------
-        visits_by_store = defaultdict(int)
-        for store in LOYALTY_STORES:
-            orders = fetch_sales_for_store(store, start_date=start_at, end_date=end_at, verbose=False)
-            for order in orders:
-                total = (order.get("total_money", {}) or {}).get("amount", 0) / 100
-                report["total_visits"] += 1
-                report["total_revenue"] += total
-                visits_by_store[store] += 1
-                if order.get("id") in loyalty_order_ids:
-                    report["member_visits"] += 1
-                    report["member_revenue"] += total
-                else:
-                    report["regular_visits"] += 1
-                    report["regular_revenue"] += total
-
-        # --- Derived ratios ----------------------------------------------
-        if report["total_visits"]:
-            report["member_visit_share"] = round(report["member_visits"] / report["total_visits"] * 100, 1)
-        if report["total_revenue"]:
-            report["loyalty_revenue_share"] = round(report["member_revenue"] / report["total_revenue"] * 100, 1)
-        if report["member_visits"]:
-            report["avg_member_spend"] = round(report["member_revenue"] / report["member_visits"], 2)
-        if report["regular_visits"]:
-            report["avg_regular_spend"] = round(report["regular_revenue"] / report["regular_visits"], 2)
-
-        report["by_store"] = [
+        total_members = report["total_members"] or 1
+        report["tier_reach"] = [
             {
-                "store": store,
-                "visits": visits_by_store.get(store, 0),
-                "member_visits": member_visits_by_store.get(store, 0),
-                "redemptions": redemptions_by_store.get(store, 0),
+                "name": t["name"],
+                "points": t["points"],
+                "members_reached": tier_reach_counts.get(t["points"], 0),
+                "pct": round(tier_reach_counts.get(t["points"], 0) / total_members * 100, 1),
             }
-            for store in LOYALTY_STORES
+            for t in tiers
         ]
 
-        report["total_revenue"] = round(report["total_revenue"], 2)
-        report["member_revenue"] = round(report["member_revenue"], 2)
-        report["regular_revenue"] = round(report["regular_revenue"], 2)
+        members.sort(key=lambda m: m[0], reverse=True)
+        report["top_members"] = [
+            {"balance": b, "lifetime": lp, "phone": ph}
+            for (b, lp, ph) in members[:8]
+        ]
+
         report["ok"] = True
         return report
 
