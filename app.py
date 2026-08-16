@@ -34,10 +34,6 @@ load_dotenv(dotenv_path=env_path)
 
 load_dotenv()
 
-print("✅ TEST: .env ACCESS")
-print("DONCASTER_ACCESS_TOKEN:", os.getenv("DONCASTER_ACCESS_TOKEN"))
-print("GLEN_WAVERLEY_ACCESS_TOKEN:", os.getenv("GLEN_WAVERLEY_ACCESS_TOKEN"))
-
 app = Flask(__name__)
 app.secret_key = "hellohello.1"
 
@@ -553,31 +549,6 @@ with app.app_context():
 # =====================================================================
 #  Simple TTL cache for expensive Square API results
 # =====================================================================
-def cache_get(key, max_age_seconds):
-    """Return cached JSON dict for `key` if it exists and is fresh, else None.
-
-    The returned dict carries two extra keys: _fetched_at (ISO string) and
-    _age_seconds so pages can show how old the data is.
-    """
-    try:
-        row = ApiCache.query.filter_by(cache_key=key).first()
-    except SQLAlchemyError:
-        db.session.rollback()
-        return None
-    if not row or not row.fetched_at:
-        return None
-    age = (datetime.utcnow() - row.fetched_at).total_seconds()
-    if age > max_age_seconds:
-        return None
-    try:
-        data = json.loads(row.payload)
-    except (ValueError, TypeError):
-        return None
-    data["_fetched_at"] = row.fetched_at.isoformat()
-    data["_age_seconds"] = int(age)
-    return data
-
-
 def cache_set(key, data):
     """Store `data` (a JSON-serialisable dict) under `key`, replacing any
     previous value, and opportunistically delete rows older than 24h."""
@@ -601,8 +572,145 @@ def cache_set(key, data):
         db.session.rollback()
 
 
-DASHBOARD_CACHE_TTL = 600      # 10 minutes
-LOYALTY_REPORT_CACHE_TTL = 600  # 10 minutes
+def cache_read(key):
+    """Return (data, age_seconds) for `key` regardless of age, or (None, None).
+
+    Used by pages that serve pre-warmed data immediately (a background task
+    keeps it fresh) rather than blocking on a live fetch.
+    """
+    try:
+        row = ApiCache.query.filter_by(cache_key=key).first()
+    except SQLAlchemyError:
+        db.session.rollback()
+        return None, None
+    if not row or not row.fetched_at:
+        return None, None
+    try:
+        data = json.loads(row.payload)
+    except (ValueError, TypeError):
+        return None, None
+    age = int((datetime.utcnow() - row.fetched_at).total_seconds())
+    return data, age
+
+
+DASHBOARD_STORES = ["Doncaster", "Lonsdale", "Clayton", "Glen Waverley"]
+
+# If the background refresher is running, the cache is always fresh. These are
+# safety nets: if the cache is older than this (refresher stopped), a page load
+# will do one live fetch to avoid serving very stale data.
+DASHBOARD_STALE_MAX = 1800       # 30 minutes
+LOYALTY_REPORT_STALE_MAX = 1800  # 30 minutes
+
+
+def _utc_bounds(start_date, end_date):
+    """(YYYY-MM-DD, YYYY-MM-DD) -> ISO-8601 'Z' start/end-of-day strings."""
+    start_utc = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S") \
+        .replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    end_utc = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S") \
+        .replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
+    return start_utc, end_utc
+
+
+def build_dashboard_square():
+    """Do the (slow) Square work for the dashboard and return a JSON-safe dict.
+
+    Called on a cache miss by the dashboard route AND by the background
+    refresher, so the two never drift apart.
+    """
+    stores = DASHBOARD_STORES
+    today = datetime.utcnow().date()
+    week_start = today - timedelta(days=6)
+    current_monday = today - timedelta(days=today.weekday())
+
+    start_utc, end_utc = _utc_bounds(week_start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
+    loyalty_start_utc, _ = _utc_bounds(current_monday.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
+
+    square_ok = True
+    today_revenue = 0.0
+    today_orders = 0
+    today_items = 0
+    store_today = {store: 0.0 for store in stores}
+    daily_revenue = {(week_start + timedelta(days=i)): 0.0 for i in range(7)}
+    top_items = defaultdict(int)
+
+    try:
+        for store in stores:
+            orders = fetch_sales_for_store(store, start_date=start_utc, end_date=end_utc)
+            for order in orders:
+                order_dt = parse_square_datetime(order.get("created_at"))
+                if not order_dt:
+                    continue
+                order_date = order_dt.date()
+                amount = (order.get("total_money", {}) or {}).get("amount", 0) / 100
+
+                if order_date in daily_revenue:
+                    daily_revenue[order_date] += amount
+
+                if order_date == today:
+                    today_revenue += amount
+                    today_orders += 1
+                    store_today[store] += amount
+                    for item in order.get("line_items", []) or []:
+                        try:
+                            qty = int(float(item.get("quantity", 0) or 0))
+                        except (ValueError, TypeError):
+                            qty = 0
+                        today_items += qty
+                        name = (item.get("name") or "").strip()
+                        if name:
+                            top_items[name] += qty
+    except Exception as exc:
+        square_ok = False
+        print("⚠️ Dashboard Square fetch failed:", exc)
+
+    avg_order_value = (today_revenue / today_orders) if today_orders else 0.0
+    store_sales_today = sorted(
+        [{"store": s, "revenue": round(store_today[s], 2)} for s in stores],
+        key=lambda x: x["revenue"], reverse=True
+    )
+    trend = [
+        {"label": d.strftime("%a"), "date": d.strftime("%d/%m"), "revenue": round(daily_revenue[d], 2)}
+        for d in sorted(daily_revenue.keys())
+    ]
+    top_sellers = sorted(
+        [{"name": name, "qty": qty} for name, qty in top_items.items()],
+        key=lambda x: x["qty"], reverse=True
+    )[:5]
+    loyalty = fetch_loyalty_summary(loyalty_start_utc, end_utc, week_start=current_monday)
+
+    return {
+        "square_ok": square_ok,
+        "today_revenue": round(today_revenue, 2),
+        "today_orders": today_orders,
+        "today_items": today_items,
+        "avg_order_value": round(avg_order_value, 2),
+        "store_sales_today": store_sales_today,
+        "trend": trend,
+        "top_sellers": top_sellers,
+        "loyalty": loyalty,
+    }
+
+
+def warm_caches():
+    """Recompute and store the expensive Square caches. Safe to call from a
+    scheduled/always-on task or on demand. Returns a short status dict."""
+    status = {"dashboard": False, "loyalty_report": False}
+
+    sq = build_dashboard_square()
+    cache_set("dashboard_square", sq)
+    status["dashboard"] = sq.get("square_ok", False)
+
+    # Pre-warm the loyalty dashboard's default view (this week, Mon -> today)
+    today = datetime.utcnow().date()
+    monday = today - timedelta(days=today.weekday())
+    start_at, end_at = _utc_bounds(monday.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
+    report = fetch_loyalty_report(start_at, end_at, monday, today)
+    if report.get("ok"):
+        cache_key = f"loyalty_report:{monday.strftime('%Y-%m-%d')}:{today.strftime('%Y-%m-%d')}"
+        cache_set(cache_key, report)
+        status["loyalty_report"] = True
+
+    return status
 
 
 @app.route("/dashboard", methods=["GET"])
@@ -612,89 +720,19 @@ def dashboard():
     if current_user.role != "admin":
         return redirect(url_for("blank_page"))
 
-    stores = ["Doncaster", "Lonsdale", "Clayton", "Glen Waverley"]
     today = datetime.utcnow().date()
-    week_start = today - timedelta(days=6)
-
-    start_utc = datetime.strptime(week_start.strftime("%Y-%m-%d") + " 00:00:00", "%Y-%m-%d %H:%M:%S") \
-        .replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
-    end_utc = datetime.strptime(today.strftime("%Y-%m-%d") + " 23:59:59", "%Y-%m-%d %H:%M:%S") \
-        .replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
-
     current_monday = today - timedelta(days=today.weekday())
-    loyalty_start_utc = datetime.strptime(current_monday.strftime("%Y-%m-%d") + " 00:00:00", "%Y-%m-%d %H:%M:%S") \
-        .replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
-    # ---- Square data: served from a 10-min cache; refetched only when stale
+    # ---- Square data: served instantly from the (background-warmed) cache ---
+    # Only do a live fetch when there's nothing cached, when it's very stale
+    # (background refresher not running), or when the user hits Refresh.
     force_refresh = request.args.get("refresh") == "1"
-    sq = None if force_refresh else cache_get("dashboard_square", DASHBOARD_CACHE_TTL)
-
-    if sq is None:
-        square_ok = True
-        today_revenue = 0.0
-        today_orders = 0
-        today_items = 0
-        store_today = {store: 0.0 for store in stores}
-        daily_revenue = {(week_start + timedelta(days=i)): 0.0 for i in range(7)}
-        top_items = defaultdict(int)
-
-        try:
-            for store in stores:
-                orders = fetch_sales_for_store(store, start_date=start_utc, end_date=end_utc)
-                for order in orders:
-                    order_dt = parse_square_datetime(order.get("created_at"))
-                    if not order_dt:
-                        continue
-                    order_date = order_dt.date()
-                    amount = (order.get("total_money", {}) or {}).get("amount", 0) / 100
-
-                    if order_date in daily_revenue:
-                        daily_revenue[order_date] += amount
-
-                    if order_date == today:
-                        today_revenue += amount
-                        today_orders += 1
-                        store_today[store] += amount
-                        for item in order.get("line_items", []) or []:
-                            try:
-                                qty = int(float(item.get("quantity", 0) or 0))
-                            except (ValueError, TypeError):
-                                qty = 0
-                            today_items += qty
-                            name = (item.get("name") or "").strip()
-                            if name:
-                                top_items[name] += qty
-        except Exception as exc:
-            square_ok = False
-            print("⚠️ Dashboard Square fetch failed:", exc)
-
-        avg_order_value = (today_revenue / today_orders) if today_orders else 0.0
-        store_sales_today = sorted(
-            [{"store": s, "revenue": round(store_today[s], 2)} for s in stores],
-            key=lambda x: x["revenue"], reverse=True
-        )
-        trend = [
-            {"label": d.strftime("%a"), "date": d.strftime("%d/%m"), "revenue": round(daily_revenue[d], 2)}
-            for d in sorted(daily_revenue.keys())
-        ]
-        top_sellers = sorted(
-            [{"name": name, "qty": qty} for name, qty in top_items.items()],
-            key=lambda x: x["qty"], reverse=True
-        )[:5]
-        loyalty = fetch_loyalty_summary(loyalty_start_utc, end_utc, week_start=current_monday)
-
-        sq = {
-            "square_ok": square_ok,
-            "today_revenue": round(today_revenue, 2),
-            "today_orders": today_orders,
-            "today_items": today_items,
-            "avg_order_value": round(avg_order_value, 2),
-            "store_sales_today": store_sales_today,
-            "trend": trend,
-            "top_sellers": top_sellers,
-            "loyalty": loyalty,
-        }
+    sq, age = cache_read("dashboard_square")
+    if force_refresh or sq is None or age is None or age > DASHBOARD_STALE_MAX:
+        sq = build_dashboard_square()
         cache_set("dashboard_square", sq)
+        age = 0
+    data_age_seconds = age
 
     # Unpack cached (or freshly built) Square data
     square_ok = sq["square_ok"]
@@ -708,7 +746,6 @@ def dashboard():
     loyalty = sq["loyalty"]
     max_store_rev = max((row["revenue"] for row in store_sales_today), default=0) or 1
     max_trend_rev = max((row["revenue"] for row in trend), default=0) or 1
-    data_age_seconds = sq.get("_age_seconds", 0)
 
     # ---- Instant local-DB metrics ----------------------------------------
     ingredients = Ingredient.query.filter(Ingredient.is_archived == False).all()
@@ -822,21 +859,23 @@ def loyalty_dashboard():
     end_at = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S") \
         .replace(tzinfo=timezone.utc).isoformat().replace("+00:00", "Z")
 
-    # Served from a 10-min cache per date range; "Refresh" forces a refetch.
+    # Served instantly from cache (background-warmed for the default week).
+    # Live fetch only on Refresh, a cold key, or very stale data.
     cache_key = f"loyalty_report:{start_date}:{end_date}"
     force_refresh = request.args.get("refresh") == "1"
-    report = None if force_refresh else cache_get(cache_key, LOYALTY_REPORT_CACHE_TTL)
-    if report is None:
+    report, age = cache_read(cache_key)
+    if force_refresh or report is None or age is None or age > LOYALTY_REPORT_STALE_MAX:
         report = fetch_loyalty_report(start_at, end_at, start_dt, end_dt)
         if report.get("ok"):
             cache_set(cache_key, report)
+        age = 0
 
     days_span = (end_dt - start_dt).days + 1
 
     return render_template(
         "loyalty_dashboard.html",
         report=report,
-        data_age_seconds=report.get("_age_seconds", 0),
+        data_age_seconds=age,
         start_date=start_date,
         end_date=end_date,
         days_span=days_span,
