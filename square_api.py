@@ -75,7 +75,7 @@ def fetch_loyalty_summary(start_at, end_at, week_start=None, verbose=False):
                         }
                     }
                 },
-                "limit": 200,
+                "limit": 30,
             }
             if cursor:
                 body["cursor"] = cursor
@@ -91,6 +91,12 @@ def fetch_loyalty_summary(start_at, end_at, week_start=None, verbose=False):
                 etype = ev.get("type")
                 if etype == "ACCUMULATE_POINTS":
                     result["points_issued"] += (ev.get("accumulate_points", {}) or {}).get("points", 0) or 0
+                elif etype == "ADJUST_POINTS":
+                    # This merchant accrues points via ADJUST_POINTS ("Franchise
+                    # accumulate points"); positive = points issued.
+                    pts = (ev.get("adjust_points", {}) or {}).get("points", 0) or 0
+                    if pts > 0:
+                        result["points_issued"] += pts
                 elif etype == "REDEEM_REWARD":
                     result["rewards_redeemed"] += 1
 
@@ -253,6 +259,7 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, ver
         "points_issued": 0,
         "points_redeemed": 0,
         "outstanding_points": 0,
+        "member_transactions": 0,
         "total_visits": 0,
         "member_visits": 0,
         "regular_visits": 0,
@@ -300,7 +307,7 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, ver
         while True:
             body = {
                 "query": {"filter": {"date_time_filter": {"created_at": {"start_at": start_at, "end_at": end_at}}}},
-                "limit": 200,
+                "limit": 30,
             }
             if cursor:
                 body["cursor"] = cursor
@@ -316,11 +323,21 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, ver
                 if etype == "ACCUMULATE_POINTS":
                     ap = ev.get("accumulate_points", {}) or {}
                     report["points_issued"] += ap.get("points", 0) or 0
+                    report["member_transactions"] += 1
                     oid = ap.get("order_id")
                     if oid:
                         loyalty_order_ids.add(oid)
                     if store:
                         member_visits_by_store[store] += 1
+                elif etype == "ADJUST_POINTS":
+                    # Franchise accrues points via ADJUST_POINTS; positive = issued,
+                    # and each such event is one member earning-transaction.
+                    pts = (ev.get("adjust_points", {}) or {}).get("points", 0) or 0
+                    if pts > 0:
+                        report["points_issued"] += pts
+                        report["member_transactions"] += 1
+                    elif pts < 0:
+                        report["points_redeemed"] += abs(pts)
                 elif etype == "REDEEM_REWARD":
                     rr = ev.get("redeem_reward", {}) or {}
                     reward_id = rr.get("reward_id")
