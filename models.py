@@ -295,5 +295,5 @@ class ApiCache(db.Model):
     __tablename__ = "api_cache"
     id = db.Column(db.Integer, primary_key=True)
     cache_key = db.Column(db.String(191), unique=True, nullable=False, index=True)
-    payload = db.Column(db.Text, nullable=False)          # JSON string
+    payload = db.Column(db.Text(length=4294967295), nullable=False)   # LONGTEXT (snapshots are large)
     fetched_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

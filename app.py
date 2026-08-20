@@ -539,11 +539,22 @@ def sync_square_orders(store_name, start_utc, end_utc, verbose=False):
     finally:
         db.session.execute(text("SELECT RELEASE_LOCK(:name)"), {"name": lock_name})
 
+def ensure_api_cache_schema():
+    """Widen the cache payload column to LONGTEXT (large member snapshots don't
+    fit in the default TEXT/64KB, which silently breaks caching)."""
+    try:
+        db.session.execute(text("ALTER TABLE api_cache MODIFY payload LONGTEXT NOT NULL"))
+        db.session.commit()
+    except SQLAlchemyError:
+        db.session.rollback()
+
+
 # Create tables
 with app.app_context():
     db.create_all()
     ensure_store_weekly_item_schema()
     ensure_ingredient_schema()
+    ensure_api_cache_schema()
 
 
 # =====================================================================
