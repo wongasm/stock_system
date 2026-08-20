@@ -598,16 +598,21 @@ DASHBOARD_STORES = ["Doncaster", "Lonsdale", "Clayton", "Glen Waverley"]
 # If the background refresher is running, the cache is always fresh. These are
 # safety nets: if the cache is older than this (refresher stopped), a page load
 # will do one live fetch to avoid serving very stale data.
-DASHBOARD_STALE_MAX = 1800       # 30 minutes
-LOYALTY_REPORT_STALE_MAX = 1800  # 30 minutes
-LOYALTY_ACCOUNTS_STALE_MAX = 3600  # 60 min — member data changes slowly
+DASHBOARD_STALE_MAX = 1800          # 30 minutes
+LOYALTY_REPORT_STALE_MAX = 1800     # 30 minutes
+# Member scan is thousands of accounts (~30s). It changes slowly, so:
+#   - the background task refreshes it ~hourly (LOYALTY_ACCOUNTS_REFRESH)
+#   - a page load serves the cached snapshot for up to 6h before rescanning,
+#     so the page is never slow even if the background task lapses.
+LOYALTY_ACCOUNTS_REFRESH = 3000     # 50 min — background rescan cadence
+LOYALTY_ACCOUNTS_STALE_MAX = 21600  # 6h — web serve-stale fallback
 
 
-def get_loyalty_accounts(force=False):
+def get_loyalty_accounts(force=False, max_age=LOYALTY_ACCOUNTS_STALE_MAX):
     """The loyalty member snapshot (slowest part), served from cache and reused
     across all date ranges. Refreshed in the background by warm_caches()."""
     data, age = cache_read("loyalty_accounts_v1")
-    if force or data is None or age is None or age > LOYALTY_ACCOUNTS_STALE_MAX:
+    if force or data is None or age is None or age > max_age:
         snap = fetch_loyalty_accounts()
         if snap.get("ok"):
             cache_set("loyalty_accounts_v1", snap)
@@ -713,13 +718,11 @@ def warm_caches():
     cache_set("dashboard_square", sq)
     status["dashboard"] = sq.get("square_ok", False)
 
-    # Refresh the member snapshot once (slowest part), reused for every range.
-    snap = fetch_loyalty_accounts()
-    accounts = None
-    if snap.get("ok"):
-        cache_set("loyalty_accounts_v1", snap)
-        accounts = snap.get("accounts", [])
-        status["loyalty_accounts"] = len(accounts)
+    # Member snapshot is the slowest part (thousands of accounts). It changes
+    # slowly, so only rescan when the cached snapshot is older than its window
+    # (get_loyalty_accounts handles that); most cycles reuse the cache.
+    accounts = get_loyalty_accounts(max_age=LOYALTY_ACCOUNTS_REFRESH) or None
+    status["loyalty_accounts"] = len(accounts) if accounts else 0
 
     # Pre-warm the loyalty dashboard's default view (this week, Mon -> today)
     today = datetime.utcnow().date()
