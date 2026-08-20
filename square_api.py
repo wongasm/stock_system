@@ -238,11 +238,56 @@ def _store_location_map():
     return mapping
 
 
-def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, verbose=False):
+def fetch_loyalty_accounts(verbose=False):
+    """
+    Snapshot every loyalty account (the slow part: ~all members, paged 200 at a
+    time). Not date-range specific, so it can be cached once and reused for any
+    range. Returns {"ok": bool, "accounts": [{balance, lifetime, created_at, phone}]}.
+    """
+    result = {"ok": False, "accounts": []}
+    token = _first_loyalty_token()
+    if not token:
+        return result
+
+    client = Client(access_token=token, environment="production")
+    accounts = []
+    try:
+        cursor = None
+        while True:
+            body = {"limit": 200}
+            if cursor:
+                body["cursor"] = cursor
+            res = client.loyalty.search_loyalty_accounts(body=body)
+            if not res.is_success():
+                if verbose:
+                    print("❌ Loyalty accounts error:", res.errors)
+                return result
+            for acc in res.body.get("loyalty_accounts", []) or []:
+                accounts.append({
+                    "balance": acc.get("balance", 0) or 0,
+                    "lifetime": acc.get("lifetime_points", 0) or 0,
+                    "created_at": acc.get("created_at"),
+                    "phone": (acc.get("mapping", {}) or {}).get("phone_number"),
+                })
+            cursor = res.body.get("cursor")
+            if not cursor:
+                break
+        result["accounts"] = accounts
+        result["ok"] = True
+    except Exception as exc:
+        if verbose:
+            print("❌ Exception snapshotting loyalty accounts:", exc)
+    return result
+
+
+def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, accounts=None, verbose=False):
     """
     Rich loyalty report for a date range (used by the Loyalty dashboard page).
 
     start_at / end_at         : ISO-8601 'Z' strings bounding the range.
+    accounts                  : optional pre-fetched account snapshot (list from
+                                fetch_loyalty_accounts) so the slow member scan
+                                can be cached and reused. Fetched live if None.
     range_start_date / _end   : date objects (for counting new enrollees by created_at).
 
     Never raises: returns {"ok": False, ...} on failure. Individual sections are
@@ -362,38 +407,29 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, ver
         )
 
         # --- Accounts: members, enrollees, liability, reward-reach, top ----
+        # Uses a cached snapshot when supplied (the slow member scan), else
+        # fetches it live.
+        if accounts is None:
+            accounts = fetch_loyalty_accounts(verbose=verbose).get("accounts", [])
+
         tier_reach_counts = {t["points"]: 0 for t in tiers}
         members = []  # (balance, lifetime, phone) for top-members list
-        cursor = None
-        while True:
-            body = {"limit": 200}
-            if cursor:
-                body["cursor"] = cursor
-            acc_res = client.loyalty.search_loyalty_accounts(body=body)
-            if not acc_res.is_success():
-                if verbose:
-                    print("❌ Loyalty accounts error:", acc_res.errors)
-                break
-            for acc in acc_res.body.get("loyalty_accounts", []) or []:
-                report["total_members"] += 1
-                balance = acc.get("balance", 0) or 0
-                report["outstanding_points"] += balance
+        for acc in accounts:
+            report["total_members"] += 1
+            balance = acc.get("balance", 0) or 0
+            report["outstanding_points"] += balance
 
-                created = _parse_iso(acc.get("created_at"))
-                if created and range_start_date <= created.date() <= range_end_date:
-                    report["new_enrollees"] += 1
+            created = _parse_iso(acc.get("created_at"))
+            if created and range_start_date <= created.date() <= range_end_date:
+                report["new_enrollees"] += 1
 
-                if report["min_tier_points"] and balance >= report["min_tier_points"]:
-                    report["members_can_redeem"] += 1
-                for tp in tier_reach_counts:
-                    if balance >= tp:
-                        tier_reach_counts[tp] += 1
+            if report["min_tier_points"] and balance >= report["min_tier_points"]:
+                report["members_can_redeem"] += 1
+            for tp in tier_reach_counts:
+                if balance >= tp:
+                    tier_reach_counts[tp] += 1
 
-                phone = (acc.get("mapping", {}) or {}).get("phone_number")
-                members.append((balance, acc.get("lifetime_points", 0) or 0, phone))
-            cursor = acc_res.body.get("cursor")
-            if not cursor:
-                break
+            members.append((balance, acc.get("lifetime", 0) or 0, acc.get("phone")))
 
         total_members = report["total_members"] or 1
         report["tier_reach"] = [
