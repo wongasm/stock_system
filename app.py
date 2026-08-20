@@ -939,6 +939,12 @@ def lapsed_members():
         threshold_days = int(request.args.get("days", 365))
     except (TypeError, ValueError):
         threshold_days = 365
+    try:
+        max_days = int(request.args.get("max_days")) if request.args.get("max_days") else None
+    except (TypeError, ValueError):
+        max_days = None
+    if max_days is not None and max_days < threshold_days:
+        max_days = None  # ignore an inverted range
     has_phone_only = request.args.get("has_phone") == "1"
 
     accounts = get_loyalty_accounts()
@@ -951,6 +957,8 @@ def lapsed_members():
             continue
         days = (now - last).days
         if days < threshold_days:
+            continue
+        if max_days is not None and days > max_days:
             continue
         phone = a.get("phone")
         if has_phone_only and not phone:
@@ -965,7 +973,9 @@ def lapsed_members():
             "days": days,
         })
 
-    rows.sort(key=lambda r: r["days"], reverse=True)
+    # Most-recently-lapsed first (freshest, most winnable, and matches the
+    # "away at least X" threshold at the top of the list).
+    rows.sort(key=lambda r: r["days"])
     total_lapsed = len(rows)
 
     if request.args.get("format") == "csv":
@@ -1001,6 +1011,7 @@ def lapsed_members():
         total_lapsed=total_lapsed,
         shown=len(display_rows),
         threshold_days=threshold_days,
+        max_days=max_days,
         has_phone_only=has_phone_only,
         options=LAPSED_OPTIONS,
         total_members=len(accounts),

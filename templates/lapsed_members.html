@@ -11,29 +11,38 @@
                 Members who haven’t visited in a while — reach out and win them back.
             </div>
         </div>
-        <a href="{{ url_for('lapsed_members', days=threshold_days, has_phone=('1' if has_phone_only else '0'), format='csv') }}"
+        <a href="{{ url_for('lapsed_members', days=threshold_days, max_days=(max_days or ''), has_phone=('1' if has_phone_only else '0'), format='csv') }}"
            class="btn app-btn-primary app-btn app-btn-auto">⬇ Download CSV</a>
     </div>
 
     <!-- Controls -->
     <div class="card app-card p-3 mb-4">
         <form method="get" action="{{ url_for('lapsed_members') }}" class="row g-3 align-items-end">
-            <div class="col-md-4 col-8">
-                <label class="form-label fw-semibold small-text">Haven’t visited in at least</label>
+            <div class="col-md-3 col-6">
+                <label class="form-label fw-semibold small-text">Away at least</label>
                 <select name="days" class="form-select" onchange="this.form.submit()">
                     {% for value, label in options %}
                     <option value="{{ value }}" {% if threshold_days == value %}selected{% endif %}>{{ label }}</option>
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-4 col-4">
+            <div class="col-md-3 col-6">
+                <label class="form-label fw-semibold small-text">Away at most</label>
+                <select name="max_days" class="form-select" onchange="this.form.submit()">
+                    <option value="" {% if not max_days %}selected{% endif %}>No limit</option>
+                    {% for value, label in options %}
+                    <option value="{{ value }}" {% if max_days == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 col-6">
                 <label class="form-label fw-semibold small-text">Contactable only</label>
                 <select name="has_phone" class="form-select" onchange="this.form.submit()">
                     <option value="0" {% if not has_phone_only %}selected{% endif %}>All members</option>
                     <option value="1" {% if has_phone_only %}selected{% endif %}>Has phone number</option>
                 </select>
             </div>
-            <div class="col-md-4 col-12 d-flex gap-2">
+            <div class="col-md-3 col-6 d-flex gap-2 align-items-end">
                 <button type="submit" class="btn app-btn-primary app-btn app-btn-auto">Apply</button>
             </div>
         </form>
@@ -42,9 +51,12 @@
     <!-- Summary -->
     <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr);">
         <div class="kpi-tile">
-            <div class="kpi-label">Lapsed Members</div>
+            <div class="kpi-label">Matching Members</div>
             <div class="kpi-value">{{ "{:,}".format(total_lapsed) }}</div>
-            <div class="kpi-foot">not seen in {{ (threshold_days / 30.44)|round(0)|int }}+ months</div>
+            <div class="kpi-foot">
+                away {{ (threshold_days / 30.44)|round(0)|int }}
+                {%- if max_days %}–{{ (max_days / 30.44)|round(0)|int }} months{% else %}+ months{% endif %}
+            </div>
         </div>
         <div class="kpi-tile">
             <div class="kpi-label">Total Members</div>
@@ -63,7 +75,7 @@
         <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
             <h3 class="dash-card-title mb-0">Reach-out list</h3>
             {% if total_lapsed > shown %}
-            <span class="small-text text-muted">Showing top {{ shown }} (most lapsed). Download CSV for all {{ "{:,}".format(total_lapsed) }}.</span>
+            <span class="small-text text-muted">Showing the {{ shown }} most-recently-lapsed. Download CSV for all {{ "{:,}".format(total_lapsed) }}.</span>
             {% endif %}
         </div>
 
