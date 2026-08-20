@@ -161,6 +161,46 @@
 
     </div>
 
+    <!-- By store -->
+    <div class="card app-card p-4 mb-4">
+        <h3 class="dash-card-title">By Store</h3>
+        <div class="table-responsive">
+            <table class="table mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Store</th>
+                        <th class="text-end">Member Visits</th>
+                        <th class="text-end">{{ report.points_name }} Issued</th>
+                        <th class="text-end">≈ Spend</th>
+                        <th class="text-end">Rewards Redeemed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in report.by_store %}
+                    <tr>
+                        <td class="fw-semibold">{{ s.store }}</td>
+                        <td class="text-end">{{ "{:,}".format(s.visits) }}</td>
+                        <td class="text-end">{{ "{:,}".format(s.points_issued) }}</td>
+                        <td class="text-end">${{ "{:,}".format(s.points_issued) }}</td>
+                        <td class="text-end">{{ s.rewards_redeemed }}</td>
+                    </tr>
+                    {% endfor %}
+                    <tr class="fw-bold" style="border-top: 2px solid rgba(148,163,184,0.4);">
+                        <td>Total</td>
+                        <td class="text-end">{{ "{:,}".format(report.member_transactions) }}</td>
+                        <td class="text-end">{{ "{:,}".format(report.points_issued) }}</td>
+                        <td class="text-end">${{ "{:,}".format(report.points_issued) }}</td>
+                        <td class="text-end">{{ report.rewards_redeemed }}</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="small-text text-muted mt-2">
+            Store comes from the franchise reference on each transaction. New enrollees and total
+            members aren’t split by store (members enrol once, program-wide).
+        </div>
+    </div>
+
     <!-- Top members -->
     <div class="card app-card p-4 mb-5">
         <h3 class="dash-card-title">Top Members (by balance)</h3>

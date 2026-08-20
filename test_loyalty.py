@@ -136,6 +136,9 @@ def print_loyalty_report():
     print(f"Members can redeem   : {r['members_can_redeem']} (min tier {r['min_tier_points']})")
     for t in r["tier_reach"]:
         print(f"    {t['name']} ({t['points']}): {t['members_reached']} members ({t['pct']}%)")
+    print("By store:")
+    for s in r.get("by_store", []):
+        print(f"    {s['store']:15s} visits={s['visits']:<6} issued={s['points_issued']:<8} rewards={s['rewards_redeemed']}")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,5 @@
 import os
+import re
 from collections import defaultdict
 from datetime import datetime, timezone
 from square.client import Client
@@ -238,6 +239,24 @@ def _store_location_map():
     return mapping
 
 
+def _event_store(ev, loc_to_store):
+    """Attribute a loyalty event to a store.
+
+    Square-native events carry a location_id. Franchise ADJUST_POINTS events
+    have no location_id but encode the store's location_id in the reason text
+    e.g. "Franchise accumulate points #LN6BD8KFFGFZZ".
+    """
+    loc = ev.get("location_id")
+    if loc and loc in loc_to_store:
+        return loc_to_store[loc]
+    if ev.get("type") == "ADJUST_POINTS":
+        reason = (ev.get("adjust_points", {}) or {}).get("reason", "") or ""
+        m = re.search(r"#(\w+)", reason)
+        if m and m.group(1) in loc_to_store:
+            return loc_to_store[m.group(1)]
+    return None
+
+
 def fetch_loyalty_accounts(verbose=False):
     """
     Snapshot every loyalty account (the slow part: ~all members, paged 200 at a
@@ -310,6 +329,7 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
         "min_tier_points": 0,
         "tier_reach": [],
         "top_members": [],
+        "by_store": [],
     }
 
     token = _first_loyalty_token()
@@ -341,9 +361,23 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
             if verbose:
                 print("ℹ️ Program retrieve failed:", exc)
 
-        # --- Events: accruals (points issued + member transactions) and
-        #     redemptions. This merchant accrues mostly via ADJUST_POINTS. ---
-        redemptions = []  # reward_ids
+        # --- Events: categorise into purchases vs redemptions, per store ---
+        #   Purchase  = ACCUMULATE_POINTS, or ADJUST_POINTS "accumulate points"
+        #   Redemption= REDEEM_REWARD (Square), or ADJUST_POINTS "create reward"
+        #   Cancelled = ADJUST_POINTS "delete reward" (refund -> reverse)
+        #   Manual    = ADJUST_POINTS "adjust points" (ignored for headline)
+        loc_to_store = _store_location_map()
+        points_to_tier = {t["points"]: t["name"] for t in tiers}
+
+        store_visits = defaultdict(int)
+        store_points = defaultdict(int)
+        store_rewards = defaultdict(int)
+        prize_counts = defaultdict(lambda: {"count": 0, "points": 0})
+        square_redemptions = []  # (reward_id, store)
+
+        def _prize_for(points):
+            return points_to_tier.get(points, "Other reward")
+
         cursor = None
         while True:
             body = {
@@ -360,51 +394,98 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
             events = ev_res.body.get("events", []) or ev_res.body.get("loyalty_events", []) or []
             for ev in events:
                 etype = ev.get("type")
+                store = _event_store(ev, loc_to_store)
+
                 if etype == "ACCUMULATE_POINTS":
-                    report["points_issued"] += (ev.get("accumulate_points", {}) or {}).get("points", 0) or 0
+                    pts = (ev.get("accumulate_points", {}) or {}).get("points", 0) or 0
+                    report["points_issued"] += pts
                     report["member_transactions"] += 1
+                    if store:
+                        store_visits[store] += 1
+                        store_points[store] += pts
+
                 elif etype == "ADJUST_POINTS":
-                    pts = (ev.get("adjust_points", {}) or {}).get("points", 0) or 0
-                    if pts > 0:
-                        report["points_issued"] += pts
-                        report["member_transactions"] += 1
+                    ap = ev.get("adjust_points", {}) or {}
+                    pts = ap.get("points", 0) or 0
+                    reason = (ap.get("reason", "") or "").lower()
+
+                    if "accumulate points" in reason:          # a purchase
+                        if pts > 0:
+                            report["points_issued"] += pts
+                            report["member_transactions"] += 1
+                            if store:
+                                store_visits[store] += 1
+                                store_points[store] += pts
+                    elif "create reward" in reason:            # a redemption
+                        cost = abs(pts)
+                        report["rewards_redeemed"] += 1
+                        report["points_redeemed"] += cost
+                        prize_counts[_prize_for(cost)]["count"] += 1
+                        prize_counts[_prize_for(cost)]["points"] += cost
+                        if store:
+                            store_rewards[store] += 1
+                    elif "delete reward" in reason:            # cancelled -> reverse
+                        refund = abs(pts)
+                        report["rewards_redeemed"] -= 1
+                        report["points_redeemed"] -= refund
+                        prize_counts[_prize_for(refund)]["count"] -= 1
+                        prize_counts[_prize_for(refund)]["points"] -= refund
+                        if store:
+                            store_rewards[store] -= 1
+                    # "adjust points" and anything else: not a visit/redemption
+
                 elif etype == "REDEEM_REWARD":
-                    redemptions.append((ev.get("redeem_reward", {}) or {}).get("reward_id"))
-                    report["rewards_redeemed"] += 1
+                    square_redemptions.append(
+                        ((ev.get("redeem_reward", {}) or {}).get("reward_id"), store)
+                    )
             cursor = ev_res.body.get("cursor")
             if not cursor:
                 break
 
+        # Resolve Square-native redemptions -> prize names + points
+        reward_cache = {}
+        for reward_id, store in square_redemptions:
+            name, points = "Reward", 0
+            if reward_id:
+                if reward_id not in reward_cache:
+                    try:
+                        rw = client.loyalty.retrieve_loyalty_reward(reward_id=reward_id)
+                        if rw.is_success():
+                            reward = rw.body.get("reward", {}) or {}
+                            points = reward.get("points", 0) or 0
+                            name = tier_names.get(reward.get("reward_tier_id"), "Reward")
+                    except Exception:
+                        pass
+                    reward_cache[reward_id] = (name, points)
+                name, points = reward_cache[reward_id]
+            report["rewards_redeemed"] += 1
+            report["points_redeemed"] += points
+            prize_counts[name]["count"] += 1
+            prize_counts[name]["points"] += points
+            if store:
+                store_rewards[store] += 1
+
+        # Clamp (deletes can momentarily push a bucket negative)
+        report["rewards_redeemed"] = max(report["rewards_redeemed"], 0)
+        report["points_redeemed"] = max(report["points_redeemed"], 0)
         if report["member_transactions"]:
             report["avg_points_per_txn"] = round(report["points_issued"] / report["member_transactions"], 1)
 
-        # --- Resolve redeemed rewards -> prize names + points -------------
-        reward_cache = {}
-        prize_counts = defaultdict(lambda: {"count": 0, "points": 0})
-        for reward_id in redemptions:
-            if not reward_id:
-                prize_counts["Unknown"]["count"] += 1
-                continue
-            if reward_id not in reward_cache:
-                name, points = "Reward", 0
-                try:
-                    rw = client.loyalty.retrieve_loyalty_reward(reward_id=reward_id)
-                    if rw.is_success():
-                        reward = rw.body.get("reward", {}) or {}
-                        points = reward.get("points", 0) or 0
-                        name = tier_names.get(reward.get("reward_tier_id"), "Reward")
-                except Exception:
-                    pass
-                reward_cache[reward_id] = (name, points)
-            name, points = reward_cache[reward_id]
-            prize_counts[name]["count"] += 1
-            prize_counts[name]["points"] += points
-            report["points_redeemed"] += points
-
         report["prize_breakdown"] = sorted(
-            [{"name": n, "count": v["count"], "points": v["points"]} for n, v in prize_counts.items()],
+            [{"name": n, "count": v["count"], "points": v["points"]}
+             for n, v in prize_counts.items() if v["count"] > 0],
             key=lambda x: x["count"], reverse=True
         )
+
+        report["by_store"] = [
+            {
+                "store": s,
+                "visits": store_visits.get(s, 0),
+                "points_issued": store_points.get(s, 0),
+                "rewards_redeemed": max(store_rewards.get(s, 0), 0),
+            }
+            for s in LOYALTY_STORES
+        ]
 
         # --- Accounts: members, enrollees, liability, reward-reach, top ----
         # Uses a cached snapshot when supplied (the slow member scan), else
