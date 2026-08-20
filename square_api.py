@@ -286,6 +286,8 @@ def fetch_loyalty_accounts(verbose=False):
                     "balance": acc.get("balance", 0) or 0,
                     "lifetime": acc.get("lifetime_points", 0) or 0,
                     "created_at": acc.get("created_at"),
+                    "enrolled_at": acc.get("enrolled_at"),
+                    "updated_at": acc.get("updated_at"),   # ~ last activity/visit
                     "phone": (acc.get("mapping", {}) or {}).get("phone_number"),
                 })
             cursor = res.body.get("cursor")

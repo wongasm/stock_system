@@ -611,11 +611,11 @@ LOYALTY_ACCOUNTS_STALE_MAX = 21600  # 6h — web serve-stale fallback
 def get_loyalty_accounts(force=False, max_age=LOYALTY_ACCOUNTS_STALE_MAX):
     """The loyalty member snapshot (slowest part), served from cache and reused
     across all date ranges. Refreshed in the background by warm_caches()."""
-    data, age = cache_read("loyalty_accounts_v1")
+    data, age = cache_read("loyalty_accounts_v2")
     if force or data is None or age is None or age > max_age:
         snap = fetch_loyalty_accounts()
         if snap.get("ok"):
-            cache_set("loyalty_accounts_v1", snap)
+            cache_set("loyalty_accounts_v2", snap)
             data = snap
     return (data or {}).get("accounts", [])
 
@@ -906,6 +906,93 @@ def loyalty_dashboard():
         days_span=days_span,
         this_week_start=(today - timedelta(days=today.weekday())).strftime("%Y-%m-%d"),
         today_str=today.strftime("%Y-%m-%d")
+    )
+
+
+LAPSED_OPTIONS = [(90, "3 months"), (180, "6 months"), (365, "1 year"),
+                  (548, "18 months"), (730, "2 years")]
+
+
+@app.route("/lapsed_members", methods=["GET"])
+@login_required
+def lapsed_members():
+    """Members who haven't earned/redeemed (visited) in a while — for outreach.
+
+    Uses each account's `updated_at` (changes on any point activity) as the
+    last-visit date. Reads the cached member snapshot, so it's instant.
+    """
+    if current_user.role != "admin":
+        return redirect(url_for("blank_page"))
+
+    try:
+        threshold_days = int(request.args.get("days", 365))
+    except (TypeError, ValueError):
+        threshold_days = 365
+    has_phone_only = request.args.get("has_phone") == "1"
+
+    accounts = get_loyalty_accounts()
+    now = datetime.utcnow()
+
+    rows = []
+    for a in accounts:
+        last = parse_square_datetime(a.get("updated_at")) or parse_square_datetime(a.get("created_at"))
+        if not last:
+            continue
+        days = (now - last).days
+        if days < threshold_days:
+            continue
+        phone = a.get("phone")
+        if has_phone_only and not phone:
+            continue
+        enrolled = parse_square_datetime(a.get("enrolled_at")) or parse_square_datetime(a.get("created_at")) or last
+        rows.append({
+            "phone": phone,
+            "balance": a.get("balance", 0) or 0,
+            "lifetime": a.get("lifetime", 0) or 0,
+            "enrolled": enrolled,
+            "last_seen": last,
+            "days": days,
+        })
+
+    rows.sort(key=lambda r: r["days"], reverse=True)
+    total_lapsed = len(rows)
+
+    if request.args.get("format") == "csv":
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(["Phone", "Bing Bucks Balance", "Lifetime Points",
+                         "Enrolled", "Last Seen", "Days Since Last Visit"])
+        for r in rows:
+            writer.writerow([
+                r["phone"] or "",
+                r["balance"], r["lifetime"],
+                r["enrolled"].strftime("%Y-%m-%d"),
+                r["last_seen"].strftime("%Y-%m-%d"),
+                r["days"],
+            ])
+        buffer = BytesIO(output.getvalue().encode("utf-8"))
+        buffer.seek(0)
+        fname = f"lapsed_members_{threshold_days}d_{datetime.utcnow().strftime('%Y%m%d')}.csv"
+        return send_file(buffer, mimetype="text/csv", as_attachment=True, download_name=fname)
+
+    display_rows = []
+    for r in rows[:300]:
+        display_rows.append({
+            **r,
+            "enrolled_str": r["enrolled"].strftime("%d %b %Y"),
+            "last_seen_str": r["last_seen"].strftime("%d %b %Y"),
+            "months": round(r["days"] / 30.44, 1),
+        })
+
+    return render_template(
+        "lapsed_members.html",
+        rows=display_rows,
+        total_lapsed=total_lapsed,
+        shown=len(display_rows),
+        threshold_days=threshold_days,
+        has_phone_only=has_phone_only,
+        options=LAPSED_OPTIONS,
+        total_members=len(accounts),
     )
 
 @app.route("/", methods=["GET", "POST"])

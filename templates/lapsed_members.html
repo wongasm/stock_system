@@ -1,0 +1,107 @@
+{% extends "navbar.html" %}
+{% block content %}
+
+<div class="container-fluid p-0 mt-5 pt-4 px-3">
+
+    <!-- Header -->
+    <div class="page-header">
+        <div>
+            <h1 class="page-title">Lapsed Members</h1>
+            <div class="page-subtitle">
+                Members who haven’t visited in a while — reach out and win them back.
+            </div>
+        </div>
+        <a href="{{ url_for('lapsed_members', days=threshold_days, has_phone=('1' if has_phone_only else '0'), format='csv') }}"
+           class="btn app-btn-primary app-btn app-btn-auto">⬇ Download CSV</a>
+    </div>
+
+    <!-- Controls -->
+    <div class="card app-card p-3 mb-4">
+        <form method="get" action="{{ url_for('lapsed_members') }}" class="row g-3 align-items-end">
+            <div class="col-md-4 col-8">
+                <label class="form-label fw-semibold small-text">Haven’t visited in at least</label>
+                <select name="days" class="form-select" onchange="this.form.submit()">
+                    {% for value, label in options %}
+                    <option value="{{ value }}" {% if threshold_days == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4 col-4">
+                <label class="form-label fw-semibold small-text">Contactable only</label>
+                <select name="has_phone" class="form-select" onchange="this.form.submit()">
+                    <option value="0" {% if not has_phone_only %}selected{% endif %}>All members</option>
+                    <option value="1" {% if has_phone_only %}selected{% endif %}>Has phone number</option>
+                </select>
+            </div>
+            <div class="col-md-4 col-12 d-flex gap-2">
+                <button type="submit" class="btn app-btn-primary app-btn app-btn-auto">Apply</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Summary -->
+    <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <div class="kpi-tile">
+            <div class="kpi-label">Lapsed Members</div>
+            <div class="kpi-value">{{ "{:,}".format(total_lapsed) }}</div>
+            <div class="kpi-foot">not seen in {{ (threshold_days / 30.44)|round(0)|int }}+ months</div>
+        </div>
+        <div class="kpi-tile">
+            <div class="kpi-label">Total Members</div>
+            <div class="kpi-value">{{ "{:,}".format(total_members) }}</div>
+            <div class="kpi-foot">all-time</div>
+        </div>
+        <div class="kpi-tile">
+            <div class="kpi-label">Lapsed Share</div>
+            <div class="kpi-value">{{ ((total_lapsed / total_members * 100) if total_members else 0)|round(1) }}%</div>
+            <div class="kpi-foot">of all members</div>
+        </div>
+    </div>
+
+    <!-- Table -->
+    <div class="card app-card p-4 mb-5">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <h3 class="dash-card-title mb-0">Reach-out list</h3>
+            {% if total_lapsed > shown %}
+            <span class="small-text text-muted">Showing top {{ shown }} (most lapsed). Download CSV for all {{ "{:,}".format(total_lapsed) }}.</span>
+            {% endif %}
+        </div>
+
+        {% if rows %}
+        <div class="table-responsive">
+            <table class="table mb-0">
+                <thead class="app-thead">
+                    <tr>
+                        <th>Phone</th>
+                        <th class="text-end">Last Seen</th>
+                        <th class="text-end">Away</th>
+                        <th class="text-end">Balance</th>
+                        <th class="text-end">Enrolled</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rows %}
+                    <tr>
+                        <td class="mono fw-semibold">{{ r.phone or "— no phone —" }}</td>
+                        <td class="text-end">{{ r.last_seen_str }}</td>
+                        <td class="text-end">{{ r.months }} mo</td>
+                        <td class="text-end">{{ "{:,}".format(r.balance) }}</td>
+                        <td class="text-end muted">{{ r.enrolled_str }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state"><span class="empty-emoji">🎉</span>No members lapsed this long — everyone's been in recently.</div>
+        {% endif %}
+
+        <div class="small-text text-muted mt-3">
+            “Last Seen” is the member’s most recent point activity (earning or redeeming). A high balance
+            + long absence is your best win-back target — e.g. “You’ve got {{ 'Bing Bucks' }} waiting!”
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}
