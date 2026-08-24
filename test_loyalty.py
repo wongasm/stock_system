@@ -139,6 +139,10 @@ def print_loyalty_report():
     print("By store:")
     for s in r.get("by_store", []):
         print(f"    {s['store']:15s} visits={s['visits']:<6} issued={s['points_issued']:<8} rewards={s['rewards_redeemed']}")
+    sus = r.get("suspicious", [])
+    print(f"Suspicious activity: {len(sus)}")
+    for s in sus:
+        print(f"    [{s['severity']}] {s['kind']} — {s['member']} @ {s['store']}: {s['detail']}")
 
 
 if __name__ == "__main__":

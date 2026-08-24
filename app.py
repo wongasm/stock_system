@@ -622,11 +622,11 @@ LOYALTY_ACCOUNTS_STALE_MAX = 21600  # 6h — web serve-stale fallback
 def get_loyalty_accounts(force=False, max_age=LOYALTY_ACCOUNTS_STALE_MAX):
     """The loyalty member snapshot (slowest part), served from cache and reused
     across all date ranges. Refreshed in the background by warm_caches()."""
-    data, age = cache_read("loyalty_accounts_v2")
+    data, age = cache_read("loyalty_accounts_v3")
     if force or data is None or age is None or age > max_age:
         snap = fetch_loyalty_accounts()
         if snap.get("ok"):
-            cache_set("loyalty_accounts_v2", snap)
+            cache_set("loyalty_accounts_v3", snap)
             data = snap
     return (data or {}).get("accounts", [])
 

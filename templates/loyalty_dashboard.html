@@ -69,6 +69,42 @@
         </div>
     </div>
 
+    <!-- Suspicious activity -->
+    {% if report.suspicious %}
+    <div class="card app-card p-4 mb-4" style="border-left: 5px solid var(--warning);">
+        <h3 class="dash-card-title" style="color: #b45309;">⚠️ Suspicious Activity ({{ report.suspicious|length }})</h3>
+        <div class="table-responsive">
+            <table class="table mb-0">
+                <thead class="app-thead">
+                    <tr><th>Flag</th><th>Member</th><th>Store</th><th>Detail</th></tr>
+                </thead>
+                <tbody>
+                    {% for s in report.suspicious %}
+                    <tr>
+                        <td>
+                            <span class="badge-tag {{ 'badge-weekly' if s.severity == 'high' else 'badge-daily' }}">
+                                {{ s.kind }}
+                            </span>
+                        </td>
+                        <td class="mono">{{ s.member }}</td>
+                        <td>{{ s.store }}</td>
+                        <td class="small-text">{{ s.detail }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="small-text text-muted mt-2">
+            Automated checks for point bursts, abnormal daily earnings, frequent redemptions, and manual
+            overrides. These aren’t proof of fraud — investigate the member/account in Square to confirm.
+        </div>
+    </div>
+    {% else %}
+    <div class="card app-card p-3 mb-4">
+        <span class="badge-soft">✓ No suspicious activity detected this period</span>
+    </div>
+    {% endif %}
+
     <!-- Member spend + Points economy -->
     <div class="dash-grid">
 

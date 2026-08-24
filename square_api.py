@@ -9,6 +9,30 @@ load_dotenv()
 
 LOYALTY_STORES = ["Doncaster", "Lonsdale", "Clayton", "Glen Waverley"]
 
+# Suspicious-activity thresholds (tune to taste)
+SUS_BURST_EVENTS = 8        # >= this many point grants...
+SUS_BURST_WINDOW = 600      # ...within this many seconds (10 min) = a burst
+SUS_HIGH_DAY_POINTS = 250   # one member earning >= this many points in a day (~$250)
+SUS_MANY_REDEEMS = 3        # one member redeeming >= this many rewards in the period
+SUS_MANY_MANUAL = 3         # one member getting >= this many manual adjustments
+SUS_BIG_MANUAL = 200        # ...or a manual adjustment total this large (abs points)
+
+
+def _max_events_in_window(times, window_seconds):
+    """Largest number of timestamps falling within any window_seconds span,
+    plus that window's start/end. `times` is a list of datetimes (or None)."""
+    pts = sorted(t for t in times if t)
+    if len(pts) < 2:
+        return len(pts), None, None
+    best, start, end = 1, None, None
+    j = 0
+    for i in range(len(pts)):
+        while (pts[i] - pts[j]).total_seconds() > window_seconds:
+            j += 1
+        if i - j + 1 > best:
+            best, start, end = i - j + 1, pts[j], pts[i]
+    return best, start, end
+
 
 def _first_loyalty_token():
     """Loyalty is merchant-wide, so any store token with LOYALTY_READ works."""
@@ -283,6 +307,7 @@ def fetch_loyalty_accounts(verbose=False):
                 return result
             for acc in res.body.get("loyalty_accounts", []) or []:
                 accounts.append({
+                    "id": acc.get("id"),
                     "balance": acc.get("balance", 0) or 0,
                     "lifetime": acc.get("lifetime_points", 0) or 0,
                     "created_at": acc.get("created_at"),
@@ -332,6 +357,7 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
         "tier_reach": [],
         "top_members": [],
         "by_store": [],
+        "suspicious": [],
     }
 
     token = _first_loyalty_token()
@@ -381,6 +407,12 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
         prize_counts = defaultdict(lambda: {"count": 0, "points": 0})
         square_redemptions = []  # (reward_id, store)
 
+        # Per-member trackers for suspicious-activity detection
+        acct_accruals = defaultdict(list)   # id -> [(datetime, points)]
+        acct_store = {}                      # id -> store seen
+        acct_redeems = defaultdict(int)      # id -> reward redemptions
+        acct_manual = defaultdict(lambda: {"count": 0, "pts": 0})  # manual adjusts
+
         def _prize_for(points):
             return points_to_tier.get(points, "Other reward")
 
@@ -393,6 +425,9 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
             if store:
                 store_points[store] += pts
                 store_visit_days[store].add(key)
+            if acct:
+                acct_accruals[acct].append((_parse_iso(ev.get("created_at")), pts))
+                acct_store.setdefault(acct, store)
 
         cursor = None
         while True:
@@ -411,6 +446,7 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
             for ev in events:
                 etype = ev.get("type")
                 store = _event_store(ev, loc_to_store)
+                acct = ev.get("loyalty_account_id")
 
                 if etype == "ACCUMULATE_POINTS":
                     pts = (ev.get("accumulate_points", {}) or {}).get("points", 0) or 0
@@ -432,6 +468,9 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
                         prize_counts[_prize_for(cost)]["points"] += cost
                         if store:
                             store_rewards[store] += 1
+                        if acct:
+                            acct_redeems[acct] += 1
+                            acct_store.setdefault(acct, store)
                     elif "delete reward" in reason:            # cancelled -> reverse
                         refund = abs(pts)
                         report["rewards_redeemed"] -= 1
@@ -440,12 +479,21 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
                         prize_counts[_prize_for(refund)]["points"] -= refund
                         if store:
                             store_rewards[store] -= 1
-                    # "adjust points" and anything else: not a visit/redemption
+                        if acct:
+                            acct_redeems[acct] -= 1
+                    else:                                       # manual "adjust points"
+                        if acct:
+                            acct_manual[acct]["count"] += 1
+                            acct_manual[acct]["pts"] += pts
+                            acct_store.setdefault(acct, store)
 
                 elif etype == "REDEEM_REWARD":
                     square_redemptions.append(
                         ((ev.get("redeem_reward", {}) or {}).get("reward_id"), store)
                     )
+                    if acct:
+                        acct_redeems[acct] += 1
+                        acct_store.setdefault(acct, store)
             cursor = ev_res.body.get("cursor")
             if not cursor:
                 break
@@ -539,6 +587,71 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
             {"balance": b, "lifetime": lp, "phone": ph}
             for (b, lp, ph) in members[:8]
         ]
+
+        # --- Suspicious activity (fraud / glitch detection) ---------------
+        points_name = report["points_name"]
+        phone_by_id = {a.get("id"): a.get("phone") for a in accounts if a.get("id")}
+
+        def _who(acct):
+            return phone_by_id.get(acct) or f"Account {(acct or '')[:8]}"
+
+        suspicious = []
+        for acct, accruals in acct_accruals.items():
+            times = [dt for dt, _ in accruals]
+            store_label = acct_store.get(acct) or "—"
+
+            # 1) Point burst — many grants in a few minutes (one sale spammed)
+            n, t0, t1 = _max_events_in_window(times, SUS_BURST_WINDOW)
+            if n >= SUS_BURST_EVENTS and t0 and t1:
+                span_min = max(1, round((t1 - t0).total_seconds() / 60))
+                suspicious.append({
+                    "kind": "Point burst",
+                    "severity": "high",
+                    "member": _who(acct),
+                    "store": store_label,
+                    "detail": f"{n} point grants in ~{span_min} min ({t0.strftime('%d %b %H:%M')})",
+                })
+
+            # 2) High single-day earnings (~big spend that may not be real)
+            day_pts = defaultdict(int)
+            for dt, pts in accruals:
+                if dt:
+                    day_pts[dt.date()] += pts
+            for d, tot in day_pts.items():
+                if tot >= SUS_HIGH_DAY_POINTS:
+                    suspicious.append({
+                        "kind": "High daily earnings",
+                        "severity": "medium",
+                        "member": _who(acct),
+                        "store": store_label,
+                        "detail": f"{tot:,} {points_name} (~${tot:,}) earned on {d.strftime('%d %b')}",
+                    })
+
+        # 3) Frequent redemptions by one member
+        for acct, cnt in acct_redeems.items():
+            if cnt >= SUS_MANY_REDEEMS:
+                suspicious.append({
+                    "kind": "Frequent redemptions",
+                    "severity": "medium",
+                    "member": _who(acct),
+                    "store": acct_store.get(acct) or "—",
+                    "detail": f"{cnt} rewards redeemed in this period",
+                })
+
+        # 4) Heavy manual point adjustments (staff overrides)
+        for acct, m in acct_manual.items():
+            if m["count"] >= SUS_MANY_MANUAL or abs(m["pts"]) >= SUS_BIG_MANUAL:
+                suspicious.append({
+                    "kind": "Manual point adjustments",
+                    "severity": "medium",
+                    "member": _who(acct),
+                    "store": acct_store.get(acct) or "—",
+                    "detail": f"{m['count']} manual adjustment(s), net {m['pts']:+,} {points_name}",
+                })
+
+        severity_rank = {"high": 0, "medium": 1, "low": 2}
+        suspicious.sort(key=lambda x: severity_rank.get(x["severity"], 3))
+        report["suspicious"] = suspicious[:50]
 
         report["ok"] = True
         return report
