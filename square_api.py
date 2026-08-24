@@ -371,7 +371,11 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
         loc_to_store = _store_location_map()
         points_to_tier = {t["points"]: t["name"] for t in tiers}
 
-        store_visits = defaultdict(int)
+        # A "visit" = a distinct member on a distinct day. The franchise POS can
+        # fire many point events per transaction, so counting raw events wildly
+        # over-states visits — we de-duplicate by (loyalty_account_id, day).
+        visit_days = set()                       # global {(account, day)}
+        store_visit_days = defaultdict(set)      # store -> {(account, day)}
         store_points = defaultdict(int)
         store_rewards = defaultdict(int)
         prize_counts = defaultdict(lambda: {"count": 0, "points": 0})
@@ -379,6 +383,16 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
 
         def _prize_for(points):
             return points_to_tier.get(points, "Other reward")
+
+        def _record_visit(ev, store, pts):
+            acct = ev.get("loyalty_account_id")
+            day = (ev.get("created_at") or "")[:10]
+            key = (acct, day)
+            visit_days.add(key)
+            report["points_issued"] += pts
+            if store:
+                store_points[store] += pts
+                store_visit_days[store].add(key)
 
         cursor = None
         while True:
@@ -400,11 +414,7 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
 
                 if etype == "ACCUMULATE_POINTS":
                     pts = (ev.get("accumulate_points", {}) or {}).get("points", 0) or 0
-                    report["points_issued"] += pts
-                    report["member_transactions"] += 1
-                    if store:
-                        store_visits[store] += 1
-                        store_points[store] += pts
+                    _record_visit(ev, store, pts)
 
                 elif etype == "ADJUST_POINTS":
                     ap = ev.get("adjust_points", {}) or {}
@@ -413,11 +423,7 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
 
                     if "accumulate points" in reason:          # a purchase
                         if pts > 0:
-                            report["points_issued"] += pts
-                            report["member_transactions"] += 1
-                            if store:
-                                store_visits[store] += 1
-                                store_points[store] += pts
+                            _record_visit(ev, store, pts)
                     elif "create reward" in reason:            # a redemption
                         cost = abs(pts)
                         report["rewards_redeemed"] += 1
@@ -467,6 +473,9 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
             if store:
                 store_rewards[store] += 1
 
+        # Visits = distinct member-days (de-duplicated from raw point events)
+        report["member_transactions"] = len(visit_days)
+
         # Clamp (deletes can momentarily push a bucket negative)
         report["rewards_redeemed"] = max(report["rewards_redeemed"], 0)
         report["points_redeemed"] = max(report["points_redeemed"], 0)
@@ -482,7 +491,7 @@ def fetch_loyalty_report(start_at, end_at, range_start_date, range_end_date, acc
         report["by_store"] = [
             {
                 "store": s,
-                "visits": store_visits.get(s, 0),
+                "visits": len(store_visit_days.get(s, set())),
                 "points_issued": store_points.get(s, 0),
                 "rewards_redeemed": max(store_rewards.get(s, 0), 0),
             }

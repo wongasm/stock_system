@@ -741,7 +741,7 @@ def warm_caches():
     start_at, end_at = _utc_bounds(monday.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
     report = fetch_loyalty_report(start_at, end_at, monday, today, accounts=accounts)
     if report.get("ok"):
-        cache_key = f"loyalty_report_v2:{monday.strftime('%Y-%m-%d')}:{today.strftime('%Y-%m-%d')}"
+        cache_key = f"loyalty_report_v3:{monday.strftime('%Y-%m-%d')}:{today.strftime('%Y-%m-%d')}"
         cache_set(cache_key, report)
         status["loyalty_report"] = True
 
@@ -896,7 +896,7 @@ def loyalty_dashboard():
 
     # Served instantly from cache (background-warmed for the default week).
     # Live fetch only on Refresh, a cold key, or very stale data.
-    cache_key = f"loyalty_report_v2:{start_date}:{end_date}"
+    cache_key = f"loyalty_report_v3:{start_date}:{end_date}"
     force_refresh = request.args.get("refresh") == "1"
     report, age = cache_read(cache_key)
     if force_refresh or report is None or age is None or age > LOYALTY_REPORT_STALE_MAX:
