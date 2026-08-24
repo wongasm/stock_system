@@ -20,7 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError, OperationalError, IntegrityError
 from sqlalchemy import cast, Numeric, and_, inspect
 from flask_mail import Mail, Message
 from dotenv import load_dotenv
-from square_api import fetch_sales_for_store, fetch_loyalty_summary, fetch_loyalty_report, fetch_loyalty_accounts
+from square_api import fetch_sales_for_store, fetch_loyalty_summary, fetch_loyalty_report, fetch_loyalty_accounts, fetch_customer_directory
 from pathlib import Path
 from square_helpers import ITEM_CATEGORY_MAP
 from freezer_pack_helpers import calculate_ingredients_for_freezer_pack
@@ -622,13 +622,25 @@ LOYALTY_ACCOUNTS_STALE_MAX = 21600  # 6h — web serve-stale fallback
 def get_loyalty_accounts(force=False, max_age=LOYALTY_ACCOUNTS_STALE_MAX):
     """The loyalty member snapshot (slowest part), served from cache and reused
     across all date ranges. Refreshed in the background by warm_caches()."""
-    data, age = cache_read("loyalty_accounts_v3")
+    data, age = cache_read("loyalty_accounts_v4")
     if force or data is None or age is None or age > max_age:
         snap = fetch_loyalty_accounts()
         if snap.get("ok"):
-            cache_set("loyalty_accounts_v3", snap)
+            cache_set("loyalty_accounts_v4", snap)
             data = snap
     return (data or {}).get("accounts", [])
+
+
+def get_customer_directory(force=False, max_age=LOYALTY_ACCOUNTS_STALE_MAX):
+    """customer_id -> {email, name, phone}, cached like the member snapshot so
+    the lapsed-members page can show emails without a slow live fetch."""
+    data, age = cache_read("customer_directory_v1")
+    if force or data is None or age is None or age > max_age:
+        snap = fetch_customer_directory()
+        if snap.get("ok"):
+            cache_set("customer_directory_v1", snap)
+            data = snap
+    return (data or {}).get("customers", {})
 
 
 def _utc_bounds(start_date, end_date):
@@ -734,6 +746,9 @@ def warm_caches():
     # (get_loyalty_accounts handles that); most cycles reuse the cache.
     accounts = get_loyalty_accounts(max_age=LOYALTY_ACCOUNTS_REFRESH) or None
     status["loyalty_accounts"] = len(accounts) if accounts else 0
+
+    # Customer directory (for emails/names on the lapsed page) — same cadence.
+    status["customers"] = len(get_customer_directory(max_age=LOYALTY_ACCOUNTS_REFRESH))
 
     # Pre-warm the loyalty dashboard's default view (this week, Mon -> today)
     today = datetime.utcnow().date()
@@ -945,9 +960,12 @@ def lapsed_members():
         max_days = None
     if max_days is not None and max_days < threshold_days:
         max_days = None  # ignore an inverted range
-    has_phone_only = request.args.get("has_phone") == "1"
+    contact = request.args.get("contact", "")   # "", "phone", or "email"
+    has_phone_only = contact == "phone"
+    has_email_only = contact == "email"
 
     accounts = get_loyalty_accounts()
+    directory = get_customer_directory()
     now = datetime.utcnow()
 
     rows = []
@@ -961,11 +979,18 @@ def lapsed_members():
         if max_days is not None and days > max_days:
             continue
         phone = a.get("phone")
+        cust = directory.get(a.get("customer_id")) or {}
+        email = cust.get("email")
+        name = cust.get("name")
         if has_phone_only and not phone:
+            continue
+        if has_email_only and not email:
             continue
         enrolled = parse_square_datetime(a.get("enrolled_at")) or parse_square_datetime(a.get("created_at")) or last
         rows.append({
+            "name": name,
             "phone": phone,
+            "email": email,
             "balance": a.get("balance", 0) or 0,
             "lifetime": a.get("lifetime", 0) or 0,
             "enrolled": enrolled,
@@ -981,11 +1006,13 @@ def lapsed_members():
     if request.args.get("format") == "csv":
         output = StringIO()
         writer = csv.writer(output)
-        writer.writerow(["Phone", "Bing Bucks Balance", "Lifetime Points",
+        writer.writerow(["Name", "Phone", "Email", "Bing Bucks Balance", "Lifetime Points",
                          "Enrolled", "Last Seen", "Days Since Last Visit"])
         for r in rows:
             writer.writerow([
+                r["name"] or "",
                 r["phone"] or "",
+                r["email"] or "",
                 r["balance"], r["lifetime"],
                 r["enrolled"].strftime("%Y-%m-%d"),
                 r["last_seen"].strftime("%Y-%m-%d"),
@@ -1012,7 +1039,8 @@ def lapsed_members():
         shown=len(display_rows),
         threshold_days=threshold_days,
         max_days=max_days,
-        has_phone_only=has_phone_only,
+        contact=contact,
+        email_available=bool(directory),
         options=LAPSED_OPTIONS,
         total_members=len(accounts),
     )

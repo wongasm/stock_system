@@ -11,7 +11,7 @@
                 Members who haven’t visited in a while — reach out and win them back.
             </div>
         </div>
-        <a href="{{ url_for('lapsed_members', days=threshold_days, max_days=(max_days or ''), has_phone=('1' if has_phone_only else '0'), format='csv') }}"
+        <a href="{{ url_for('lapsed_members', days=threshold_days, max_days=(max_days or ''), contact=contact, format='csv') }}"
            class="btn app-btn-primary app-btn app-btn-auto">⬇ Download CSV</a>
     </div>
 
@@ -36,10 +36,11 @@
                 </select>
             </div>
             <div class="col-md-3 col-6">
-                <label class="form-label fw-semibold small-text">Contactable only</label>
-                <select name="has_phone" class="form-select" onchange="this.form.submit()">
-                    <option value="0" {% if not has_phone_only %}selected{% endif %}>All members</option>
-                    <option value="1" {% if has_phone_only %}selected{% endif %}>Has phone number</option>
+                <label class="form-label fw-semibold small-text">Contact filter</label>
+                <select name="contact" class="form-select" onchange="this.form.submit()">
+                    <option value="" {% if not contact %}selected{% endif %}>All members</option>
+                    <option value="phone" {% if contact == 'phone' %}selected{% endif %}>Has phone number</option>
+                    <option value="email" {% if contact == 'email' %}selected{% endif %}>Has email address</option>
                 </select>
             </div>
             <div class="col-md-3 col-6 d-flex gap-2 align-items-end">
@@ -47,6 +48,13 @@
             </div>
         </form>
     </div>
+
+    {% if not email_available %}
+    <div class="alert alert-warning">
+        Customer names/emails couldn’t be loaded — the Square token may be missing the
+        <strong>CUSTOMERS_READ</strong> permission. Phone numbers still work.
+    </div>
+    {% endif %}
 
     <!-- Summary -->
     <div class="kpi-grid" style="grid-template-columns: repeat(3, 1fr);">
@@ -84,21 +92,23 @@
             <table class="table mb-0">
                 <thead class="app-thead">
                     <tr>
+                        <th>Name</th>
                         <th>Phone</th>
+                        <th>Email</th>
                         <th class="text-end">Last Seen</th>
                         <th class="text-end">Away</th>
                         <th class="text-end">Balance</th>
-                        <th class="text-end">Enrolled</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for r in rows %}
                     <tr>
-                        <td class="mono fw-semibold">{{ r.phone or "— no phone —" }}</td>
+                        <td class="fw-semibold">{{ r.name or "—" }}</td>
+                        <td class="mono">{{ r.phone or "—" }}</td>
+                        <td class="mono small-text">{{ r.email or "—" }}</td>
                         <td class="text-end">{{ r.last_seen_str }}</td>
                         <td class="text-end">{{ r.months }} mo</td>
                         <td class="text-end">{{ "{:,}".format(r.balance) }}</td>
-                        <td class="text-end muted">{{ r.enrolled_str }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>

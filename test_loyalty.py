@@ -145,9 +145,31 @@ def print_loyalty_report():
         print(f"    [{s['severity']}] {s['kind']} — {s['member']} @ {s['store']}: {s['detail']}")
 
 
+def print_customers():
+    """Verify the customer directory loads (needs CUSTOMERS_READ) and how many
+    members have an email on file."""
+    from square_api import fetch_customer_directory, fetch_loyalty_accounts
+    print("\nFetching customer directory (ListCustomers)...")
+    d = fetch_customer_directory(verbose=True)
+    if not d["ok"]:
+        print("❌ Could not load customers — token likely missing CUSTOMERS_READ.")
+        return
+    custs = d["customers"]
+    with_email = sum(1 for c in custs.values() if c.get("email"))
+    with_name = sum(1 for c in custs.values() if c.get("name"))
+    print(f"✅ Customers: {len(custs):,} | with email: {with_email:,} | with name: {with_name:,}")
+
+    accts = fetch_loyalty_accounts().get("accounts", [])
+    linked = sum(1 for a in accts if a.get("customer_id") in custs)
+    linked_email = sum(1 for a in accts if custs.get(a.get("customer_id"), {}).get("email"))
+    print(f"Loyalty members: {len(accts):,} | linked to a customer: {linked:,} | with email: {linked_email:,}")
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--report":
         print_loyalty_report()
+    elif len(sys.argv) > 1 and sys.argv[1] == "--customers":
+        print_customers()
     elif len(sys.argv) > 1 and sys.argv[1] == "--numbers":
         print_loyalty_numbers()
     else:

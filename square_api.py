@@ -308,6 +308,7 @@ def fetch_loyalty_accounts(verbose=False):
             for acc in res.body.get("loyalty_accounts", []) or []:
                 accounts.append({
                     "id": acc.get("id"),
+                    "customer_id": acc.get("customer_id"),
                     "balance": acc.get("balance", 0) or 0,
                     "lifetime": acc.get("lifetime_points", 0) or 0,
                     "created_at": acc.get("created_at"),
@@ -323,6 +324,47 @@ def fetch_loyalty_accounts(verbose=False):
     except Exception as exc:
         if verbose:
             print("❌ Exception snapshotting loyalty accounts:", exc)
+    return result
+
+
+def fetch_customer_directory(verbose=False):
+    """Map every Square customer_id -> {email, name, phone}, via ListCustomers
+    (paged 100 at a time). Cached like the member snapshot. Needs CUSTOMERS_READ;
+    returns {"ok": False, "customers": {}} if the token lacks it.
+    """
+    result = {"ok": False, "customers": {}}
+    token = _first_loyalty_token()
+    if not token:
+        return result
+
+    client = Client(access_token=token, environment="production")
+    customers = {}
+    try:
+        cursor = None
+        while True:
+            res = client.customers.list_customers(cursor=cursor, limit=100)
+            if not res.is_success():
+                if verbose:
+                    print("❌ Customers list error:", res.errors)
+                return result
+            for c in res.body.get("customers", []) or []:
+                cid = c.get("id")
+                if not cid:
+                    continue
+                name = " ".join(x for x in [c.get("given_name"), c.get("family_name")] if x).strip()
+                customers[cid] = {
+                    "email": c.get("email_address"),
+                    "name": name or None,
+                    "phone": c.get("phone_number"),
+                }
+            cursor = res.body.get("cursor")
+            if not cursor:
+                break
+        result["customers"] = customers
+        result["ok"] = True
+    except Exception as exc:
+        if verbose:
+            print("❌ Exception building customer directory:", exc)
     return result
 
 
