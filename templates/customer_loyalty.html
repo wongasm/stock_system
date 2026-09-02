@@ -5,23 +5,8 @@
 {% block page_shell_class %}customer-loyalty-shell{% endblock %}
 
 {% block content %}
-{% set brand_wordmark_url = "https://images.squarespace-cdn.com/content/v1/63c1e9f25d20b163195a60be/1673652734905-CB5NG77AZ032FROK8KQJ/TextLogoShort+-+Medium.png?format=1500w" %}
-{% set brand_mascot_url = "https://images.squarespace-cdn.com/content/v1/63c1e9f25d20b163195a60be/1673652728395-Q9WGOCQ5OTG1SC3ZX3NL/MainLogo+-+Large.png" %}
 <div class="customer-loyalty-page">
     <section class="customer-loyalty-card customer-loyalty-card--{{ mode }}" aria-labelledby="loyalty-title">
-        <div class="customer-brand-row">
-            <a href="https://www.bingchillin.com.au/" class="customer-wordmark-link" aria-label="Bing Chillin home">
-                <img
-                    src="{{ brand_wordmark_url }}"
-                    alt="bing chillin"
-                    class="customer-wordmark"
-                    width="1200"
-                    height="194"
-                    decoding="async"
-                >
-            </a>
-        </div>
-
         <div class="customer-hero-lockup">
             <div class="customer-hero-copy">
                 <div class="customer-kicker">Bing Chillin Rewards</div>
@@ -36,15 +21,6 @@
                     {% endif %}
                 </p>
             </div>
-            <img
-                src="{{ brand_mascot_url }}"
-                alt=""
-                class="customer-hero-mascot"
-                width="1543"
-                height="2636"
-                aria-hidden="true"
-                decoding="async"
-            >
         </div>
 
         <div class="customer-panel">
