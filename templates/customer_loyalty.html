@@ -11,13 +11,15 @@
             <div class="customer-hero-copy">
                 <div class="customer-kicker">Bing Chillin Rewards</div>
                 <h1 id="loyalty-title" class="customer-title">
-                    {% if mode == "account" %}your bing bucks{% elif mode == "signup" %}join bing bucks{% else %}check your bing bucks{% endif %}
+                    {% if mode == "account" %}your bing bucks{% elif mode in ["signup", "choice"] %}join bing bucks{% else %}check your bing bucks{% endif %}
                 </h1>
                 <p class="customer-intro">
                     {% if mode == "account" %}
                         Your rewards are ready for your next dessert run.
                     {% elif mode == "signup" %}
                         Sign up with the phone number you'll use in store.
+                    {% elif mode == "choice" %}
+                        Join Bing Chillin Rewards, or check your points if you're already collecting.
                     {% else %}
                         Pop in the phone number you use in store to see your balance.
                     {% endif %}
@@ -139,6 +141,19 @@
                     <button type="submit" class="btn app-btn-secondary app-btn">use another phone number</button>
                 </form>
             </div>
+        {% elif mode == "choice" %}
+            <div class="customer-choice-grid">
+                <a href="{{ url_for('customer_loyalty_signup') }}" class="customer-choice-action customer-choice-action--signup">
+                    <span>new members</span>
+                    <strong>sign up</strong>
+                    <small>Join rewards and collect Bing Bucks every time you visit.</small>
+                </a>
+                <a href="{{ url_for('customer_loyalty', view='check') }}" class="customer-choice-action customer-choice-action--check">
+                    <span>already joined?</span>
+                    <strong>check points</strong>
+                    <small>Use your phone number to see your current balance.</small>
+                </a>
+            </div>
         {% elif mode == "signup" %}
             <form method="post" action="{{ url_for('customer_loyalty_signup') }}" class="customer-signup-form" data-loading-form data-loading-text="Signing you up">
                 <input type="hidden" name="customer_loyalty_signup_csrf" value="{{ customer_signup_csrf }}">
@@ -199,7 +214,7 @@
 
             <div class="customer-mode-actions">
                 Already joined?
-                <a href="{{ url_for('customer_loyalty') }}" class="customer-switch-link">check your rewards</a>
+                <a href="{{ url_for('customer_loyalty', view='check') }}" class="customer-switch-link">check your rewards</a>
             </div>
         {% else %}
             <form method="post" action="{{ url_for('customer_loyalty') }}" class="customer-lookup-form" data-loading-form data-loading-text="Finding your rewards">

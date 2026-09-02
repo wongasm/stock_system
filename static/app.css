@@ -491,6 +491,92 @@ a:hover {
     margin-bottom: 0;
 }
 
+.customer-choice-grid {
+    align-items: stretch;
+    display: grid;
+    gap: 14px;
+    grid-template-columns: minmax(0, 1.45fr) minmax(220px, 0.85fr);
+}
+
+.customer-choice-action {
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    justify-content: flex-end;
+    padding: 22px;
+    text-decoration: none;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.customer-choice-action:hover,
+.customer-choice-action:focus {
+    transform: translateY(-2px);
+}
+
+.customer-choice-action span {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: lowercase;
+}
+
+.customer-choice-action strong {
+    font-family: "henderson-sans-basic", "Space Grotesk", "Arial Rounded MT Bold", sans-serif;
+    font-size: 2rem;
+    font-weight: 600;
+    line-height: 1;
+    text-transform: lowercase;
+}
+
+.customer-choice-action small {
+    font-size: 0.98rem;
+    font-weight: 300;
+    line-height: 1.35;
+    max-width: 340px;
+}
+
+.customer-choice-action--signup {
+    background: var(--bc-brown);
+    box-shadow: 0 18px 32px rgba(73, 50, 8, 0.22);
+    color: var(--bc-cream);
+    min-height: 208px;
+}
+
+.customer-choice-action--signup:hover,
+.customer-choice-action--signup:focus {
+    background: #2f2107;
+    color: var(--bc-cream);
+}
+
+.customer-choice-action--signup span,
+.customer-choice-action--signup small {
+    color: rgba(255, 248, 236, 0.78);
+}
+
+.customer-choice-action--signup strong {
+    color: var(--bc-tan);
+    font-size: 3.2rem;
+}
+
+.customer-choice-action--check {
+    background: rgba(255, 253, 248, 0.74);
+    border: 2px solid rgba(73, 50, 8, 0.14);
+    color: var(--bc-brown);
+    min-height: 156px;
+}
+
+.customer-choice-action--check:hover,
+.customer-choice-action--check:focus {
+    background: #fffdf8;
+    color: var(--bc-brown);
+    box-shadow: 0 12px 22px rgba(73, 50, 8, 0.1);
+}
+
+.customer-choice-action--check span,
+.customer-choice-action--check small {
+    color: var(--bc-brown-soft);
+}
+
 .customer-signup-form {
     display: grid;
     gap: 16px;
@@ -1304,6 +1390,12 @@ a:hover {
     .customer-title { font-size: 2.2rem; }
     .customer-intro { font-size: 0.98rem; margin-top: 8px; }
     .customer-panel { padding: 16px; }
+    .customer-choice-grid { grid-template-columns: 1fr; }
+    .customer-choice-action { padding: 18px; }
+    .customer-choice-action--signup { min-height: 174px; }
+    .customer-choice-action--signup strong { font-size: 2.65rem; }
+    .customer-choice-action--check { min-height: 128px; }
+    .customer-choice-action--check strong { font-size: 1.8rem; }
     .customer-phone-row { grid-template-columns: 1fr; }
     .customer-signup-grid { grid-template-columns: 1fr; }
     .customer-submit { min-height: 46px; width: 100%; }

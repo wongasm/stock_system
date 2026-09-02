@@ -959,6 +959,7 @@ def customer_loyalty():
     phone_value = ""
     error = None
     not_found = False
+    show_check_form = request.method == "POST" or request.args.get("view") == "check"
 
     if request.method == "POST":
         phone_value = (request.form.get("phone") or "").strip()
@@ -976,7 +977,7 @@ def customer_loyalty():
 
     return render_template(
         "customer_loyalty.html",
-        mode="login",
+        mode="login" if show_check_form else "choice",
         phone_value=phone_value,
         error=error,
         not_found=not_found,
