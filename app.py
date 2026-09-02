@@ -21,7 +21,7 @@ from sqlalchemy.exc import SQLAlchemyError, OperationalError, IntegrityError
 from sqlalchemy import cast, Numeric, and_, inspect
 from flask_mail import Mail, Message
 from dotenv import load_dotenv
-from square_api import fetch_sales_for_store, fetch_loyalty_summary, fetch_loyalty_report, fetch_loyalty_accounts, fetch_customer_directory, fetch_loyalty_program_details, fetch_loyalty_accounts_by_phone, fetch_customer_profile, update_customer_profile
+from square_api import fetch_sales_for_store, fetch_loyalty_summary, fetch_loyalty_report, fetch_loyalty_accounts, fetch_customer_directory, fetch_loyalty_program_details, fetch_loyalty_accounts_by_phone, fetch_customer_profile, update_customer_profile, create_loyalty_account
 from pathlib import Path
 from square_helpers import ITEM_CATEGORY_MAP
 from freezer_pack_helpers import calculate_ingredients_for_freezer_pack
@@ -780,6 +780,28 @@ def _split_customer_name(full_name):
     return parts[0], parts[1] if len(parts) > 1 else None
 
 
+def _valid_email_address(email):
+    return bool(email and len(email) <= 254 and re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email))
+
+
+def _first_e164_phone(phone_value):
+    candidates = _phone_e164_candidates(phone_value)
+    return candidates[0] if candidates else None
+
+
+def _customer_signup_csrf():
+    token = session.get("customer_loyalty_signup_csrf")
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session["customer_loyalty_signup_csrf"] = token
+    return token
+
+
+def _valid_customer_signup_csrf():
+    token = session.get("customer_loyalty_signup_csrf")
+    return bool(token and request.form.get("customer_loyalty_signup_csrf") == token)
+
+
 def _profile_form_value(customer, field):
     value = (customer or {}).get(field)
     return value or ""
@@ -813,9 +835,53 @@ def _patch_customer_directory_cache(customer):
     cache_set("customer_directory_v1", data)
 
 
+def _patch_loyalty_accounts_cache(account):
+    if not account or not account.get("id"):
+        return
+    data, _age = cache_read("loyalty_accounts_v4")
+    if not isinstance(data, dict):
+        return
+    accounts = data.get("accounts")
+    if not isinstance(accounts, list):
+        return
+    for index, existing in enumerate(accounts):
+        if existing.get("id") == account["id"]:
+            accounts[index] = account
+            break
+    else:
+        accounts.append(account)
+    cache_set("loyalty_accounts_v4", data)
+
+
 def _valid_customer_loyalty_csrf():
     token = session.get("customer_loyalty_csrf")
     return bool(token and request.form.get("customer_loyalty_csrf") == token)
+
+
+def _save_loyalty_profile_details(account, matched_phone, name, email):
+    """Save optional signup/profile details to the Square customer profile."""
+    customer_id = (account or {}).get("customer_id")
+    if not customer_id or (not name and not email):
+        return {"ok": True, "customer": None, "skipped": True}
+
+    profile = _customer_profile_for_account(account)
+    customer = profile.get("customer") or {}
+    given_name, family_name = _split_customer_name(name)
+    profile_phone = customer.get("phone") or matched_phone or account.get("phone")
+
+    result = update_customer_profile(
+        customer_id,
+        given_name=given_name,
+        family_name=family_name,
+        email_address=email or None,
+        phone_number=profile_phone,
+        version=customer.get("version"),
+        update_name=bool(name),
+        update_email=bool(email),
+    )
+    if result.get("ok"):
+        _patch_customer_directory_cache(result.get("customer"))
+    return result
 
 
 def _find_loyalty_account_by_phone(phone, accounts, directory=None):
@@ -917,6 +983,89 @@ def customer_loyalty():
     )
 
 
+def _loyalty_signup_error_message(errors):
+    codes = {error.get("code") for error in errors or [] if isinstance(error, dict)}
+    details = " ".join(
+        str(error.get("detail") or error.get("field") or "")
+        for error in errors or []
+        if isinstance(error, dict)
+    ).lower()
+
+    if "INVALID_PHONE_NUMBER" in codes:
+        return "Enter a valid Australian phone number."
+    if "UNAUTHORIZED" in codes or "FORBIDDEN" in codes:
+        return "Rewards signup is not enabled right now. Please let our team know."
+    if "phone" in details and ("already" in details or "unique" in details or "conflict" in details):
+        return "That phone number may already be signed up. Try checking your rewards instead."
+    return "We could not sign you up right now. Please try again soon."
+
+
+@app.route("/loyalty/signup", methods=["GET", "POST"])
+def customer_loyalty_signup():
+    """Public signup for Square loyalty by phone number."""
+    phone_value = ""
+    name_value = ""
+    email_value = ""
+    error = None
+
+    if request.method == "POST":
+        phone_value = (request.form.get("phone") or "").strip()
+        name_value = " ".join((request.form.get("name") or "").strip().split())
+        email_value = (request.form.get("email") or "").strip()
+        e164_phone = _first_e164_phone(phone_value)
+
+        if not _valid_customer_signup_csrf():
+            error = "Please refresh the page and try again."
+        elif len(_phone_digits(phone_value)) < 8 or not e164_phone:
+            error = "Enter a valid Australian phone number."
+        elif len(name_value) > 300:
+            error = "Please keep your name under 300 characters."
+        elif email_value and not _valid_email_address(email_value):
+            error = "Enter a valid email address."
+        elif request.form.get("signup_consent") != "yes":
+            error = "Please confirm you want to join Bing Chillin Rewards."
+        elif _loyalty_lookup_rate_limited(f"signup:{request.remote_addr}"):
+            error = "Too many signup attempts. Please wait a few minutes and try again."
+        else:
+            account, matched_phone = _lookup_loyalty_account_for_phone(phone_value)
+            if account:
+                save_result = _save_loyalty_profile_details(account, matched_phone, name_value, email_value)
+                _store_customer_loyalty_session(account, matched_phone)
+                session["loyalty_profile_message"] = "You're already signed up. Your rewards are below."
+                if not save_result.get("ok"):
+                    session["loyalty_profile_error"] = "We found your rewards, but could not save your details right now."
+                return redirect(url_for("customer_loyalty_account"))
+
+            created = create_loyalty_account(e164_phone)
+            if created.get("ok"):
+                account = created.get("account") or {}
+                _patch_loyalty_accounts_cache(account)
+                save_result = _save_loyalty_profile_details(account, e164_phone, name_value, email_value)
+                _store_customer_loyalty_session(account, e164_phone)
+                session["loyalty_profile_message"] = "You're signed up. Start collecting Bing Bucks in store with this phone number."
+                if not save_result.get("ok"):
+                    session["loyalty_profile_error"] = "You're signed up, but we could not save your name or email right now."
+                return redirect(url_for("customer_loyalty_account"))
+
+            account, matched_phone = _lookup_loyalty_account_for_phone(e164_phone)
+            if account:
+                _store_customer_loyalty_session(account, matched_phone)
+                session["loyalty_profile_message"] = "You're already signed up. Your rewards are below."
+                return redirect(url_for("customer_loyalty_account"))
+            error = _loyalty_signup_error_message(created.get("errors"))
+
+    return render_template(
+        "customer_loyalty.html",
+        mode="signup",
+        phone_value=phone_value,
+        customer_name=name_value,
+        customer_email=email_value,
+        error=error,
+        not_found=False,
+        customer_signup_csrf=_customer_signup_csrf(),
+    )
+
+
 @app.route("/loyalty/account", methods=["GET"])
 def customer_loyalty_account():
     """Logged-in customer loyalty result page."""
@@ -965,31 +1114,17 @@ def update_customer_loyalty_profile():
     if len(name) > 300:
         session["loyalty_profile_error"] = "Please keep your name under 300 characters."
         return redirect(url_for("customer_loyalty_account"))
-    if email and (len(email) > 254 or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email)):
+    if email and not _valid_email_address(email):
         session["loyalty_profile_error"] = "Enter a valid email address."
         return redirect(url_for("customer_loyalty_account"))
     if not name and not email:
         session["loyalty_profile_error"] = "Add your name or email before saving."
         return redirect(url_for("customer_loyalty_account"))
 
-    profile = _customer_profile_for_account(account)
-    customer = profile.get("customer") or {}
-    given_name, family_name = _split_customer_name(name)
     matched_phone = lookup_session.get("matched_phone") or account.get("phone")
-    profile_phone = customer.get("phone") or matched_phone
-    result = update_customer_profile(
-        customer_id,
-        given_name=given_name,
-        family_name=family_name,
-        email_address=email or None,
-        phone_number=profile_phone,
-        version=customer.get("version"),
-        update_name=bool(name),
-        update_email=bool(email),
-    )
+    result = _save_loyalty_profile_details(account, matched_phone, name, email)
 
     if result.get("ok"):
-        _patch_customer_directory_cache(result.get("customer"))
         session["loyalty_profile_message"] = "Your details have been saved."
     else:
         session["loyalty_profile_error"] = "We could not save your details in Square right now. Please try again soon."

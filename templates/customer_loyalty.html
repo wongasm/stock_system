@@ -11,11 +11,13 @@
             <div class="customer-hero-copy">
                 <div class="customer-kicker">Bing Chillin Rewards</div>
                 <h1 id="loyalty-title" class="customer-title">
-                    {% if mode == "account" %}your bing bucks{% else %}check your bing bucks{% endif %}
+                    {% if mode == "account" %}your bing bucks{% elif mode == "signup" %}join bing bucks{% else %}check your bing bucks{% endif %}
                 </h1>
                 <p class="customer-intro">
                     {% if mode == "account" %}
                         Your rewards are ready for your next dessert run.
+                    {% elif mode == "signup" %}
+                        Sign up with the phone number you'll use in store.
                     {% else %}
                         Pop in the phone number you use in store to see your balance.
                     {% endif %}
@@ -137,6 +139,68 @@
                     <button type="submit" class="btn app-btn-secondary app-btn">use another phone number</button>
                 </form>
             </div>
+        {% elif mode == "signup" %}
+            <form method="post" action="{{ url_for('customer_loyalty_signup') }}" class="customer-signup-form" data-loading-form data-loading-text="Signing you up">
+                <input type="hidden" name="customer_loyalty_signup_csrf" value="{{ customer_signup_csrf }}">
+                <div class="customer-signup-grid">
+                    <div class="customer-signup-phone">
+                        <label class="form-label" for="signup-phone">phone number</label>
+                        <input
+                            id="signup-phone"
+                            name="phone"
+                            type="tel"
+                            inputmode="tel"
+                            autocomplete="tel"
+                            class="form-control customer-phone-input"
+                            placeholder="04xx xxx xxx"
+                            value="{{ phone_value }}"
+                            required
+                        >
+                    </div>
+                    <div>
+                        <label class="form-label" for="signup-name">name</label>
+                        <input
+                            id="signup-name"
+                            name="name"
+                            type="text"
+                            autocomplete="name"
+                            class="form-control"
+                            placeholder="Your name"
+                            value="{{ customer_name }}"
+                            maxlength="300"
+                        >
+                    </div>
+                    <div>
+                        <label class="form-label" for="signup-email">email</label>
+                        <input
+                            id="signup-email"
+                            name="email"
+                            type="email"
+                            autocomplete="email"
+                            class="form-control"
+                            placeholder="you@example.com"
+                            value="{{ customer_email }}"
+                            maxlength="254"
+                        >
+                    </div>
+                </div>
+
+                <label class="customer-consent">
+                    <input type="checkbox" name="signup_consent" value="yes" required>
+                    <span>I agree to join Bing Chillin Rewards with this phone number.</span>
+                </label>
+
+                <button type="submit" class="btn app-btn-primary app-btn customer-submit customer-full-button">join rewards</button>
+            </form>
+
+            {% if error %}
+                <div class="alert alert-warning customer-message" role="alert">{{ error }}</div>
+            {% endif %}
+
+            <div class="customer-mode-actions">
+                Already joined?
+                <a href="{{ url_for('customer_loyalty') }}" class="customer-switch-link">check your rewards</a>
+            </div>
         {% else %}
             <form method="post" action="{{ url_for('customer_loyalty') }}" class="customer-lookup-form" data-loading-form data-loading-text="Finding your rewards">
                 <label class="form-label" for="phone">phone number</label>
@@ -164,8 +228,14 @@
                 <div class="customer-empty-state" role="status">
                     <div class="customer-empty-title">no rewards account found</div>
                     <p>We could not find a loyalty account for that phone number. Try the number you used in store, with or without the country code.</p>
+                    <a href="{{ url_for('customer_loyalty_signup') }}" class="customer-empty-link">join rewards</a>
                 </div>
             {% endif %}
+
+            <div class="customer-mode-actions">
+                New to Bing Chillin Rewards?
+                <a href="{{ url_for('customer_loyalty_signup') }}" class="customer-switch-link">join now</a>
+            </div>
         {% endif %}
         </div>
     </section>

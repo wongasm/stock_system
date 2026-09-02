@@ -1,5 +1,6 @@
 import os
 import re
+import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 from square.client import Client
@@ -94,6 +95,7 @@ def fetch_loyalty_program_details(verbose=False):
 
         result.update({
             "ok": True,
+            "program_id": program.get("id"),
             "program_status": program.get("status"),
             "points_name": terminology.get("other") or "Points",
             "reward_tiers": tiers,
@@ -176,6 +178,55 @@ def fetch_loyalty_accounts_by_phone(phone_numbers, verbose=False):
     except Exception as exc:
         if verbose:
             print("❌ Exception searching loyalty account by phone:", exc)
+        return result
+
+
+def create_loyalty_account(phone_number, customer_id=None, verbose=False):
+    """Enroll a buyer in the Square loyalty program by E.164 phone number."""
+    result = {"ok": False, "account": None, "errors": []}
+    token = _first_loyalty_token()
+    if not token or not phone_number:
+        return result
+
+    client = Client(access_token=token, environment="production")
+    try:
+        program_res = client.loyalty.retrieve_loyalty_program(program_id="main")
+        if not program_res.is_success():
+            if verbose:
+                print("❌ Loyalty program error:", program_res.errors)
+            result["errors"] = program_res.errors or []
+            return result
+
+        program = program_res.body.get("program", {}) or {}
+        program_id = program.get("id")
+        if not program_id:
+            result["errors"] = [{"detail": "Square loyalty program ID was not returned."}]
+            return result
+
+        loyalty_account = {
+            "program_id": program_id,
+            "mapping": {"phone_number": phone_number},
+        }
+        if customer_id:
+            loyalty_account["customer_id"] = customer_id
+
+        res = client.loyalty.create_loyalty_account(body={
+            "loyalty_account": loyalty_account,
+            "idempotency_key": str(uuid.uuid4()),
+        })
+        if not res.is_success():
+            if verbose:
+                print("❌ Loyalty account create error:", res.errors)
+            result["errors"] = res.errors or []
+            return result
+
+        result["account"] = _loyalty_account_summary(res.body.get("loyalty_account", {}) or {})
+        result["ok"] = True
+        return result
+    except Exception as exc:
+        if verbose:
+            print("❌ Exception creating loyalty account:", exc)
+        result["errors"] = [{"detail": str(exc)}]
         return result
 
 
