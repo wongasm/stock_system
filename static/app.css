@@ -384,7 +384,7 @@ a:hover {
 .customer-brand-row {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 18px;
 }
 
@@ -398,17 +398,6 @@ a:hover {
     display: block;
     height: auto;
     width: 100%;
-}
-
-.customer-brand-pill {
-    border: 2px solid rgba(73, 50, 8, 0.24);
-    border-radius: 999px;
-    color: var(--bc-brown);
-    font-size: 0.9rem;
-    font-weight: 700;
-    line-height: 1;
-    padding: 10px 14px;
-    white-space: nowrap;
 }
 
 .customer-hero-lockup {
@@ -760,7 +749,7 @@ a:hover {
 }
 
 .customer-progress-fill {
-    background: linear-gradient(90deg, var(--bc-brown), var(--bc-berry), var(--bc-pistachio));
+    background: var(--bc-brown);
     border-radius: inherit;
     height: 100%;
     min-width: 4px;
@@ -1287,7 +1276,6 @@ a:hover {
     .customer-loyalty-card { gap: 18px; }
     .customer-brand-row { align-items: center; gap: 12px; }
     .customer-wordmark-link { max-width: 190px; }
-    .customer-brand-pill { font-size: 0.8rem; padding: 8px 10px; }
     .customer-hero-lockup { grid-template-columns: minmax(0, 1fr) 82px; gap: 12px; }
     .customer-hero-mascot { max-height: 146px; width: 78px; }
     .customer-loyalty-card--account .customer-hero-mascot { width: 70px; }
@@ -1314,7 +1302,6 @@ a:hover {
     .bar-row { grid-template-columns: 68px 1fr 46px; }
     .customer-title { font-size: 1.95rem; }
     .customer-wordmark-link { max-width: 168px; }
-    .customer-brand-pill { font-size: 0.74rem; padding: 7px 9px; }
     .customer-hero-lockup { grid-template-columns: minmax(0, 1fr) 68px; }
     .customer-hero-mascot { width: 62px; }
 }
