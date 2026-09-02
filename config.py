@@ -1,7 +1,9 @@
 import os
 
 class Config:
-    SECRET_KEY = os.getenv("SECRET_KEY", "hellohello.1")
+    SECRET_KEY = os.getenv("SECRET_KEY") or os.getenv("FLASK_SECRET_KEY")
+    SQLALCHEMY_DATABASE_URI = os.getenv("SQLALCHEMY_DATABASE_URI") or os.getenv("DATABASE_URL")
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # Flask-Mail Configuration for Sending Emails
     MAIL_SERVER = "smtp.gmail.com"  # Change if using another provider (e.g., Outlook, SMTP relay)

@@ -35,11 +35,27 @@ load_dotenv(dotenv_path=env_path)
 
 load_dotenv()
 
+
+def required_env(*names):
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    raise RuntimeError(f"Missing required environment variable: {' or '.join(names)}")
+
+
+def redact_database_uri(uri):
+    return re.sub(r":([^:@/]+)@", ":***@", uri or "")
+
+
 app = Flask(__name__)
-app.secret_key = "hellohello.1"
+app.config["SECRET_KEY"] = required_env("SECRET_KEY", "FLASK_SECRET_KEY")
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "true").lower() not in {"0", "false", "no"}
 
 # Database Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = "mysql://wongasm2:Hellohello.1@wongasm2.mysql.pythonanywhere-services.com/wongasm2$stock_system"
+app.config['SQLALCHEMY_DATABASE_URI'] = required_env("SQLALCHEMY_DATABASE_URI", "DATABASE_URL")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     "pool_pre_ping": True,
@@ -61,7 +77,7 @@ app.config["MAIL_DEFAULT_SENDER"] = os.getenv("MAIL_DEFAULT_SENDER", app.config[
 
 mail = Mail(app)
 
-print(f"🔍 Flask Database URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
+print(f"🔍 Flask database configured: {redact_database_uri(app.config['SQLALCHEMY_DATABASE_URI'])}")
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -3912,7 +3928,7 @@ def update_weekly_stocktake_order():
 @login_required
 def debug_db():
     # ✅ Print current database connection
-    print(f"🔍 Database URI: {app.config['SQLALCHEMY_DATABASE_URI']}")
+    print(f"🔍 Database URI: {redact_database_uri(app.config['SQLALCHEMY_DATABASE_URI'])}")
 
     # ✅ Check if Flask is retrieving correct stock
     stock_check = db.session.query(Ingredient.id, Ingredient.name, Ingredient.quantity).all()
