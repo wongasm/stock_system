@@ -291,6 +291,262 @@ a:hover {
     margin-bottom: 24px;
 }
 
+.customer-loyalty-page {
+    width: min(100%, 760px);
+    padding: 32px 0;
+}
+
+.customer-loyalty-card {
+    padding: 30px;
+    border-radius: 16px !important;
+    overflow: hidden;
+}
+
+.customer-brand-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 24px;
+}
+
+.customer-brand-mark {
+    width: 58px;
+    height: 58px;
+    border-radius: 14px;
+    object-fit: cover;
+    box-shadow: 0 14px 24px rgba(15, 23, 42, 0.16);
+}
+
+.customer-kicker {
+    color: #0f766e;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+}
+
+.customer-title {
+    margin: 2px 0 0;
+    font-size: 2rem;
+    line-height: 1.08;
+}
+
+.customer-lookup-form {
+    margin-bottom: 16px;
+}
+
+.customer-phone-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+}
+
+.customer-phone-input {
+    min-height: 48px;
+}
+
+.customer-submit {
+    min-width: 112px;
+}
+
+.customer-message {
+    margin: 16px 0 0;
+}
+
+.customer-empty-state {
+    background: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    border-radius: 14px;
+    color: #92400e;
+    margin-top: 16px;
+    padding: 18px;
+}
+
+.customer-empty-title {
+    color: #78350f;
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.customer-empty-state p {
+    margin: 0;
+    color: #92400e;
+    font-size: 0.92rem;
+}
+
+.customer-result {
+    display: grid;
+    gap: 16px;
+    margin-top: 20px;
+}
+
+.customer-balance-panel {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 18px;
+    background: linear-gradient(135deg, #0f172a, #115e59);
+    color: #ffffff;
+    border-radius: 14px;
+    padding: 22px;
+}
+
+.customer-result-label {
+    color: rgba(255, 255, 255, 0.76);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    text-transform: uppercase;
+}
+
+.customer-result-sub {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.88rem;
+    margin-top: 4px;
+}
+
+.customer-balance {
+    text-align: right;
+}
+
+.customer-balance span {
+    display: block;
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 3rem;
+    font-weight: 700;
+    line-height: 0.95;
+}
+
+.customer-balance small {
+    color: rgba(255, 255, 255, 0.74);
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+.customer-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.customer-stat {
+    background: rgba(148, 163, 184, 0.08);
+    border: 1px solid var(--card-border);
+    border-radius: 12px;
+    padding: 14px;
+}
+
+.customer-stat span {
+    display: block;
+    color: var(--page-ink-soft);
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+.customer-stat strong {
+    display: block;
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 1.08rem;
+    margin-top: 4px;
+}
+
+.customer-expiry {
+    background: rgba(249, 115, 22, 0.1);
+    border: 1px solid rgba(249, 115, 22, 0.24);
+    border-radius: 12px;
+    color: #9a3412;
+    font-weight: 700;
+    padding: 12px 14px;
+}
+
+.customer-section {
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.customer-section-title {
+    color: var(--page-ink-soft);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+}
+
+.customer-reward-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.customer-reward-pill {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    background: rgba(34, 197, 94, 0.13);
+    border: 1px solid rgba(34, 197, 94, 0.25);
+    border-radius: 999px;
+    color: #14532d;
+    padding: 8px 12px;
+}
+
+.customer-reward-pill span {
+    font-weight: 700;
+}
+
+.customer-reward-pill small {
+    color: #166534;
+    font-weight: 600;
+}
+
+.customer-progress-section {
+    background: #ffffff;
+}
+
+.customer-progress-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: flex-end;
+    margin-bottom: 12px;
+}
+
+.customer-next-name {
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 1.18rem;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.customer-remaining {
+    color: #0284c7;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.customer-progress-track {
+    background: rgba(148, 163, 184, 0.2);
+    border-radius: 999px;
+    height: 12px;
+    overflow: hidden;
+}
+
+.customer-progress-fill {
+    background: linear-gradient(90deg, #f97316, #14b8a6);
+    border-radius: inherit;
+    height: 100%;
+    min-width: 4px;
+}
+
+.customer-top-reward {
+    color: #0f766e;
+    font-weight: 700;
+}
+
 @media (max-width: 900px) {
     .action-group {
         flex-direction: column;
@@ -749,6 +1005,19 @@ a:hover {
     /* Attention rows a bit tighter */
     .attention-icon { width: 38px; height: 38px; font-size: 1.05rem; }
     .attention-value { font-size: 0.98rem; }
+
+    .customer-loyalty-page { padding: 18px 0; }
+    .customer-loyalty-card { padding: 22px 18px; }
+    .customer-brand-row { align-items: flex-start; }
+    .customer-brand-mark { width: 48px; height: 48px; }
+    .customer-title { font-size: 1.55rem; }
+    .customer-phone-row { grid-template-columns: 1fr; }
+    .customer-submit { min-height: 46px; width: 100%; }
+    .customer-balance-panel { align-items: flex-start; flex-direction: column; }
+    .customer-balance { text-align: left; }
+    .customer-balance span { font-size: 2.55rem; }
+    .customer-stat-grid { grid-template-columns: 1fr; }
+    .customer-progress-head { align-items: flex-start; flex-direction: column; }
 }
 
 /* Very narrow phones */

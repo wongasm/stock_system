@@ -53,6 +53,117 @@ def _parse_iso(value):
         return None
 
 
+def fetch_loyalty_program_details(verbose=False):
+    """
+    Return public-safe program details for the customer loyalty lookup page.
+
+    Includes the point terminology and reward tiers, but no member data.
+    """
+    result = {
+        "ok": False,
+        "program_status": None,
+        "points_name": "Points",
+        "reward_tiers": [],
+    }
+
+    token = _first_loyalty_token()
+    if not token:
+        if verbose:
+            print("⚠️ No Square access token available for loyalty program.")
+        return result
+
+    client = Client(access_token=token, environment="production")
+
+    try:
+        prog = client.loyalty.retrieve_loyalty_program(program_id="main")
+        if not prog.is_success():
+            if verbose:
+                print("❌ Loyalty program error:", prog.errors)
+            return result
+
+        program = prog.body.get("program", {}) or {}
+        terminology = program.get("terminology", {}) or {}
+        tiers = []
+        for tier in program.get("reward_tiers", []) or []:
+            tiers.append({
+                "id": tier.get("id"),
+                "name": tier.get("name") or "Reward",
+                "points": tier.get("points", 0) or 0,
+            })
+        tiers.sort(key=lambda t: t["points"])
+
+        result.update({
+            "ok": True,
+            "program_status": program.get("status"),
+            "points_name": terminology.get("other") or "Points",
+            "reward_tiers": tiers,
+        })
+        return result
+
+    except Exception as exc:
+        if verbose:
+            print("❌ Exception loading loyalty program:", exc)
+        return result
+
+
+def _loyalty_account_summary(acc):
+    return {
+        "id": acc.get("id"),
+        "customer_id": acc.get("customer_id"),
+        "balance": acc.get("balance", 0) or 0,
+        "lifetime": acc.get("lifetime_points", 0) or 0,
+        "created_at": acc.get("created_at"),
+        "enrolled_at": acc.get("enrolled_at"),
+        "updated_at": acc.get("updated_at"),   # ~ last activity/visit
+        "phone": (acc.get("mapping", {}) or {}).get("phone_number"),
+        "expiring_point_deadlines": acc.get("expiring_point_deadlines") or [],
+    }
+
+
+def fetch_loyalty_accounts_by_phone(phone_numbers, verbose=False):
+    """
+    Search Square loyalty accounts by E.164 phone-number mappings.
+
+    Returns {"ok": bool, "accounts": [...]} and never raises.
+    """
+    result = {"ok": False, "accounts": []}
+    token = _first_loyalty_token()
+    if not token:
+        return result
+
+    mappings = []
+    seen = set()
+    for phone in phone_numbers or []:
+        if not phone or phone in seen:
+            continue
+        seen.add(phone)
+        mappings.append({"phone_number": phone})
+    if not mappings:
+        return result
+
+    client = Client(access_token=token, environment="production")
+    try:
+        res = client.loyalty.search_loyalty_accounts(body={
+            "query": {"mappings": mappings[:30]},
+            "limit": min(max(len(mappings), 1), 200),
+        })
+        if not res.is_success():
+            if verbose:
+                print("❌ Loyalty phone lookup error:", res.errors)
+            return result
+
+        result["accounts"] = [
+            _loyalty_account_summary(acc)
+            for acc in res.body.get("loyalty_accounts", []) or []
+        ]
+        result["ok"] = True
+        return result
+    except Exception as exc:
+        if verbose:
+            print("❌ Exception searching loyalty account by phone:", exc)
+        return result
+
+
 def fetch_loyalty_summary(start_at, end_at, week_start=None, verbose=False):
     """
     Summarise loyalty activity for a period.
@@ -306,16 +417,7 @@ def fetch_loyalty_accounts(verbose=False):
                     print("❌ Loyalty accounts error:", res.errors)
                 return result
             for acc in res.body.get("loyalty_accounts", []) or []:
-                accounts.append({
-                    "id": acc.get("id"),
-                    "customer_id": acc.get("customer_id"),
-                    "balance": acc.get("balance", 0) or 0,
-                    "lifetime": acc.get("lifetime_points", 0) or 0,
-                    "created_at": acc.get("created_at"),
-                    "enrolled_at": acc.get("enrolled_at"),
-                    "updated_at": acc.get("updated_at"),   # ~ last activity/visit
-                    "phone": (acc.get("mapping", {}) or {}).get("phone_number"),
-                })
+                accounts.append(_loyalty_account_summary(acc))
             cursor = res.body.get("cursor")
             if not cursor:
                 break

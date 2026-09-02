@@ -20,7 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError, OperationalError, IntegrityError
 from sqlalchemy import cast, Numeric, and_, inspect
 from flask_mail import Mail, Message
 from dotenv import load_dotenv
-from square_api import fetch_sales_for_store, fetch_loyalty_summary, fetch_loyalty_report, fetch_loyalty_accounts, fetch_customer_directory
+from square_api import fetch_sales_for_store, fetch_loyalty_summary, fetch_loyalty_report, fetch_loyalty_accounts, fetch_customer_directory, fetch_loyalty_program_details, fetch_loyalty_accounts_by_phone
 from pathlib import Path
 from square_helpers import ITEM_CATEGORY_MAP
 from freezer_pack_helpers import calculate_ingredients_for_freezer_pack
@@ -617,6 +617,9 @@ LOYALTY_REPORT_STALE_MAX = 1800     # 30 minutes
 #     so the page is never slow even if the background task lapses.
 LOYALTY_ACCOUNTS_REFRESH = 3000     # 50 min — background rescan cadence
 LOYALTY_ACCOUNTS_STALE_MAX = 21600  # 6h — web serve-stale fallback
+LOYALTY_LOOKUP_WINDOW_SECONDS = 300
+LOYALTY_LOOKUP_MAX_ATTEMPTS = 12
+_loyalty_lookup_attempts = defaultdict(list)
 
 
 def get_loyalty_accounts(force=False, max_age=LOYALTY_ACCOUNTS_STALE_MAX):
@@ -641,6 +644,188 @@ def get_customer_directory(force=False, max_age=LOYALTY_ACCOUNTS_STALE_MAX):
             cache_set("customer_directory_v1", snap)
             data = snap
     return (data or {}).get("customers", {})
+
+
+def get_loyalty_program_details(force=False, max_age=LOYALTY_ACCOUNTS_STALE_MAX):
+    """Cached program details used by the public customer rewards page."""
+    data, age = cache_read("loyalty_program_v1")
+    if force or data is None or age is None or age > max_age:
+        snap = fetch_loyalty_program_details()
+        if snap.get("ok"):
+            cache_set("loyalty_program_v1", snap)
+            data = snap
+    return data or {"ok": False, "points_name": "Points", "reward_tiers": []}
+
+
+def _phone_digits(value):
+    return re.sub(r"\D+", "", value or "")
+
+
+def _phone_lookup_keys(value):
+    """Build comparable phone keys for local AU and E.164 Square formats."""
+    digits = _phone_digits(value)
+    if not digits:
+        return set()
+
+    keys = {digits}
+    if digits.startswith("00") and len(digits) > 4:
+        keys.add(digits[2:])
+    if digits.startswith("61") and len(digits) >= 10:
+        keys.add("0" + digits[2:])
+    if digits.startswith("0") and len(digits) >= 9:
+        keys.add("61" + digits[1:])
+    if len(digits) >= 9:
+        keys.add(digits[-9:])
+    if len(digits) >= 10:
+        keys.add(digits[-10:])
+
+    return {key for key in keys if len(key) >= 8}
+
+
+def _phone_e164_candidates(value):
+    digits = _phone_digits(value)
+    if not digits:
+        return []
+
+    candidates = []
+    stripped = (value or "").strip()
+    if stripped.startswith("+"):
+        candidates.append("+" + digits)
+    if digits.startswith("00") and len(digits) > 4:
+        candidates.append("+" + digits[2:])
+    if digits.startswith("61") and len(digits) >= 10:
+        candidates.append("+" + digits)
+    if digits.startswith("0") and len(digits) >= 9:
+        candidates.append("+61" + digits[1:])
+    if len(digits) == 9 and digits[0] in {"2", "3", "4", "7", "8"}:
+        candidates.append("+61" + digits)
+
+    unique = []
+    for candidate in candidates:
+        if candidate not in unique:
+            unique.append(candidate)
+    return unique
+
+
+def _loyalty_lookup_rate_limited(remote_key):
+    now = datetime.utcnow()
+    window_start = now - timedelta(seconds=LOYALTY_LOOKUP_WINDOW_SECONDS)
+    history = _loyalty_lookup_attempts[remote_key or "unknown"]
+    history[:] = [stamp for stamp in history if stamp >= window_start]
+    if len(history) >= LOYALTY_LOOKUP_MAX_ATTEMPTS:
+        return True
+    history.append(now)
+    return False
+
+
+def _find_loyalty_account_by_phone(phone, accounts, directory=None):
+    target_keys = _phone_lookup_keys(phone)
+    if not target_keys:
+        return None, None
+
+    for account in accounts:
+        account_phone = account.get("phone")
+        if target_keys & _phone_lookup_keys(account_phone):
+            return account, account_phone
+
+    for account in accounts:
+        customer = (directory or {}).get(account.get("customer_id")) or {}
+        customer_phone = customer.get("phone")
+        if target_keys & _phone_lookup_keys(customer_phone):
+            return account, customer_phone
+
+    return None, None
+
+
+def _format_public_date(value):
+    parsed = parse_square_datetime(value)
+    return parsed.strftime("%d %b %Y") if parsed else None
+
+
+def _build_customer_loyalty_view(account, matched_phone, program):
+    balance = account.get("balance", 0) or 0
+    lifetime = account.get("lifetime", 0) or 0
+    reward_tiers = [
+        tier for tier in (program.get("reward_tiers") or [])
+        if tier.get("points") and tier.get("points") > 0
+    ]
+    reward_tiers.sort(key=lambda tier: tier["points"])
+    available_rewards = [tier for tier in reward_tiers if balance >= tier["points"]]
+    next_reward = next((tier for tier in reward_tiers if balance < tier["points"]), None)
+    remaining = max((next_reward or {}).get("points", 0) - balance, 0) if next_reward else 0
+    progress_pct = 100 if reward_tiers and not next_reward else 0
+    if next_reward and next_reward.get("points"):
+        progress_pct = min(100, round(balance / next_reward["points"] * 100))
+
+    expiring_points = []
+    for deadline in account.get("expiring_point_deadlines") or []:
+        expires_at = parse_square_datetime(deadline.get("expires_at"))
+        points = deadline.get("points", 0) or 0
+        if expires_at and points:
+            expiring_points.append({
+                "points": points,
+                "expires_at": expires_at,
+                "expires_str": expires_at.strftime("%d %b %Y"),
+            })
+    expiring_points.sort(key=lambda item: item["expires_at"])
+
+    phone_last4 = _phone_digits(matched_phone or account.get("phone"))[-4:] or "----"
+
+    return {
+        "balance": balance,
+        "lifetime": lifetime,
+        "points_name": program.get("points_name") or "Points",
+        "phone_last4": phone_last4,
+        "enrolled_str": _format_public_date(account.get("enrolled_at") or account.get("created_at")),
+        "last_activity_str": _format_public_date(account.get("updated_at")),
+        "reward_tiers": reward_tiers,
+        "available_rewards": available_rewards,
+        "next_reward": next_reward,
+        "remaining": remaining,
+        "progress_pct": progress_pct,
+        "next_expiry": expiring_points[0] if expiring_points else None,
+    }
+
+
+@app.route("/loyalty", methods=["GET", "POST"])
+def customer_loyalty():
+    """Public customer lookup for Square loyalty account details by phone."""
+    phone_value = ""
+    lookup = None
+    error = None
+    not_found = False
+    program = {"ok": False, "points_name": "Points", "reward_tiers": []}
+
+    if request.method == "POST":
+        phone_value = (request.form.get("phone") or "").strip()
+        if len(_phone_digits(phone_value)) < 8:
+            error = "Enter the phone number linked to your rewards account."
+        elif _loyalty_lookup_rate_limited(request.remote_addr):
+            error = "Too many lookup attempts. Please wait a few minutes and try again."
+        else:
+            direct = fetch_loyalty_accounts_by_phone(_phone_e164_candidates(phone_value))
+            accounts = direct.get("accounts", []) if direct.get("ok") else []
+            account, matched_phone = _find_loyalty_account_by_phone(phone_value, accounts)
+            if not account:
+                accounts = get_loyalty_accounts()
+                account, matched_phone = _find_loyalty_account_by_phone(phone_value, accounts)
+            if not account:
+                directory = get_customer_directory()
+                account, matched_phone = _find_loyalty_account_by_phone(phone_value, accounts, directory)
+            if account:
+                program = get_loyalty_program_details()
+                lookup = _build_customer_loyalty_view(account, matched_phone, program)
+            else:
+                not_found = True
+
+    return render_template(
+        "customer_loyalty.html",
+        phone_value=phone_value,
+        lookup=lookup,
+        error=error,
+        not_found=not_found,
+        program=program,
+    )
 
 
 def _utc_bounds(start_date, end_date):

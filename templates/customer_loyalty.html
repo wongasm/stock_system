@@ -1,0 +1,115 @@
+{% extends "base_no_sidebar.html" %}
+
+{% block title %}Bing Chillin Rewards{% endblock %}
+
+{% block content %}
+<div class="customer-loyalty-page">
+    <section class="customer-loyalty-card app-card" aria-labelledby="loyalty-title">
+        <div class="customer-brand-row">
+            <img src="{{ url_for('static', filename='favicon.png') }}" alt="Bing Chillin" class="customer-brand-mark">
+            <div>
+                <div class="customer-kicker">Bing Chillin Rewards</div>
+                <h1 id="loyalty-title" class="customer-title">Check your Bing Bucks</h1>
+            </div>
+        </div>
+
+        <form method="post" action="{{ url_for('customer_loyalty') }}" class="customer-lookup-form">
+            <label class="form-label" for="phone">Phone number</label>
+            <div class="customer-phone-row">
+                <input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    inputmode="tel"
+                    autocomplete="tel"
+                    class="form-control customer-phone-input"
+                    placeholder="04xx xxx xxx"
+                    value="{{ phone_value }}"
+                    required
+                >
+                <button type="submit" class="btn app-btn-primary app-btn customer-submit">Check</button>
+            </div>
+        </form>
+
+        {% if error %}
+            <div class="alert alert-warning customer-message" role="alert">{{ error }}</div>
+        {% endif %}
+
+        {% if not_found %}
+            <div class="customer-empty-state" role="status">
+                <div class="customer-empty-title">No rewards account found</div>
+                <p>We could not find a loyalty account for that phone number. Try the number you used in store, with or without the country code.</p>
+            </div>
+        {% endif %}
+
+        {% if lookup %}
+            <div class="customer-result" role="status">
+                <div class="customer-balance-panel">
+                    <div>
+                        <div class="customer-result-label">Current balance</div>
+                        <div class="customer-result-sub">Phone ending {{ lookup.phone_last4 }}</div>
+                    </div>
+                    <div class="customer-balance">
+                        <span>{{ "{:,}".format(lookup.balance) }}</span>
+                        <small>{{ lookup.points_name }}</small>
+                    </div>
+                </div>
+
+                <div class="customer-stat-grid">
+                    <div class="customer-stat">
+                        <span>Lifetime earned</span>
+                        <strong>{{ "{:,}".format(lookup.lifetime) }}</strong>
+                    </div>
+                    <div class="customer-stat">
+                        <span>Joined</span>
+                        <strong>{{ lookup.enrolled_str or "Recently" }}</strong>
+                    </div>
+                    <div class="customer-stat">
+                        <span>Last activity</span>
+                        <strong>{{ lookup.last_activity_str or "Not yet" }}</strong>
+                    </div>
+                </div>
+
+                {% if lookup.next_expiry %}
+                    <div class="customer-expiry">
+                        {{ "{:,}".format(lookup.next_expiry.points) }} {{ lookup.points_name|lower }} expire on {{ lookup.next_expiry.expires_str }}.
+                    </div>
+                {% endif %}
+
+                {% if lookup.available_rewards %}
+                    <div class="customer-section">
+                        <div class="customer-section-title">Ready to redeem</div>
+                        <div class="customer-reward-list">
+                            {% for reward in lookup.available_rewards %}
+                                <div class="customer-reward-pill">
+                                    <span>{{ reward.name }}</span>
+                                    <small>{{ reward.points }} {{ lookup.points_name|lower }}</small>
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                {% endif %}
+
+                <div class="customer-section customer-progress-section">
+                    {% if lookup.next_reward %}
+                        <div class="customer-progress-head">
+                            <div>
+                                <div class="customer-section-title">Next reward</div>
+                                <div class="customer-next-name">{{ lookup.next_reward.name }}</div>
+                            </div>
+                            <div class="customer-remaining">{{ lookup.remaining }} to go</div>
+                        </div>
+                        <div class="customer-progress-track" aria-label="Reward progress">
+                            <div class="customer-progress-fill" style="width: {{ lookup.progress_pct }}%;"></div>
+                        </div>
+                    {% elif lookup.reward_tiers %}
+                        <div class="customer-top-reward">You have enough {{ lookup.points_name|lower }} for the top listed reward.</div>
+                    {% else %}
+                        <div class="customer-top-reward">Your rewards balance is ready to use in store.</div>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}
