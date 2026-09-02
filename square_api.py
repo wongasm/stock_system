@@ -120,6 +120,21 @@ def _loyalty_account_summary(acc):
     }
 
 
+def _customer_summary(customer):
+    given_name = customer.get("given_name")
+    family_name = customer.get("family_name")
+    name = " ".join(part for part in [given_name, family_name] if part).strip()
+    return {
+        "id": customer.get("id"),
+        "email": customer.get("email_address"),
+        "name": name or customer.get("nickname"),
+        "given_name": given_name,
+        "family_name": family_name,
+        "phone": customer.get("phone_number"),
+        "version": customer.get("version"),
+    }
+
+
 def fetch_loyalty_accounts_by_phone(phone_numbers, verbose=False):
     """
     Search Square loyalty accounts by E.164 phone-number mappings.
@@ -161,6 +176,80 @@ def fetch_loyalty_accounts_by_phone(phone_numbers, verbose=False):
     except Exception as exc:
         if verbose:
             print("❌ Exception searching loyalty account by phone:", exc)
+        return result
+
+
+def fetch_customer_profile(customer_id, verbose=False):
+    """Retrieve one Square customer profile by ID."""
+    result = {"ok": False, "customer": None, "errors": []}
+    token = _first_loyalty_token()
+    if not token or not customer_id:
+        return result
+
+    client = Client(access_token=token, environment="production")
+    try:
+        try:
+            res = client.customers.retrieve_customer(customer_id=customer_id)
+        except TypeError:
+            res = client.customers.retrieve_customer(customer_id)
+
+        if not res.is_success():
+            if verbose:
+                print("❌ Customer retrieve error:", res.errors)
+            result["errors"] = res.errors or []
+            return result
+
+        result["customer"] = _customer_summary(res.body.get("customer", {}) or {})
+        result["ok"] = True
+        return result
+    except Exception as exc:
+        if verbose:
+            print("❌ Exception retrieving customer:", exc)
+        result["errors"] = [{"detail": str(exc)}]
+        return result
+
+
+def update_customer_profile(customer_id, given_name=None, family_name=None,
+                            email_address=None, phone_number=None, version=None,
+                            update_name=False, update_email=False,
+                            verbose=False):
+    """Update a Square customer profile linked to a loyalty account."""
+    result = {"ok": False, "customer": None, "errors": []}
+    token = _first_loyalty_token()
+    if not token or not customer_id:
+        return result
+
+    body = {}
+    if update_name:
+        body["given_name"] = given_name or None
+        body["family_name"] = family_name or None
+    if update_email:
+        body["email_address"] = email_address or None
+    if phone_number:
+        body["phone_number"] = phone_number
+    if version:
+        body["version"] = version
+
+    client = Client(access_token=token, environment="production")
+    try:
+        try:
+            res = client.customers.update_customer(customer_id=customer_id, body=body)
+        except TypeError:
+            res = client.customers.update_customer(customer_id, body)
+
+        if not res.is_success():
+            if verbose:
+                print("❌ Customer update error:", res.errors)
+            result["errors"] = res.errors or []
+            return result
+
+        result["customer"] = _customer_summary(res.body.get("customer", {}) or {})
+        result["ok"] = True
+        return result
+    except Exception as exc:
+        if verbose:
+            print("❌ Exception updating customer:", exc)
+        result["errors"] = [{"detail": str(exc)}]
         return result
 
 
@@ -453,12 +542,7 @@ def fetch_customer_directory(verbose=False):
                 cid = c.get("id")
                 if not cid:
                     continue
-                name = " ".join(x for x in [c.get("given_name"), c.get("family_name")] if x).strip()
-                customers[cid] = {
-                    "email": c.get("email_address"),
-                    "name": name or None,
-                    "phone": c.get("phone_number"),
-                }
+                customers[cid] = _customer_summary(c)
             cursor = res.body.get("cursor")
             if not cursor:
                 break

@@ -9,40 +9,20 @@
             <img src="{{ url_for('static', filename='favicon.png') }}" alt="Bing Chillin" class="customer-brand-mark">
             <div>
                 <div class="customer-kicker">Bing Chillin Rewards</div>
-                <h1 id="loyalty-title" class="customer-title">Check your Bing Bucks</h1>
+                <h1 id="loyalty-title" class="customer-title">
+                    {% if mode == "account" %}Your Bing Bucks{% else %}Check your Bing Bucks{% endif %}
+                </h1>
             </div>
         </div>
 
-        <form method="post" action="{{ url_for('customer_loyalty') }}" class="customer-lookup-form">
-            <label class="form-label" for="phone">Phone number</label>
-            <div class="customer-phone-row">
-                <input
-                    id="phone"
-                    name="phone"
-                    type="tel"
-                    inputmode="tel"
-                    autocomplete="tel"
-                    class="form-control customer-phone-input"
-                    placeholder="04xx xxx xxx"
-                    value="{{ phone_value }}"
-                    required
-                >
-                <button type="submit" class="btn app-btn-primary app-btn customer-submit">Check</button>
-            </div>
-        </form>
+        {% if mode == "account" %}
+            {% if profile_message %}
+                <div class="alert alert-success customer-message" role="status">{{ profile_message }}</div>
+            {% endif %}
+            {% if profile_error %}
+                <div class="alert alert-warning customer-message" role="alert">{{ profile_error }}</div>
+            {% endif %}
 
-        {% if error %}
-            <div class="alert alert-warning customer-message" role="alert">{{ error }}</div>
-        {% endif %}
-
-        {% if not_found %}
-            <div class="customer-empty-state" role="status">
-                <div class="customer-empty-title">No rewards account found</div>
-                <p>We could not find a loyalty account for that phone number. Try the number you used in store, with or without the country code.</p>
-            </div>
-        {% endif %}
-
-        {% if lookup %}
             <div class="customer-result" role="status">
                 <div class="customer-balance-panel">
                     <div>
@@ -69,6 +49,40 @@
                         <strong>{{ lookup.last_activity_str or "Not yet" }}</strong>
                     </div>
                 </div>
+
+                <form method="post" action="{{ url_for('update_customer_loyalty_profile') }}" class="customer-profile-form" data-loading-form data-loading-text="Saving your details">
+                    <input type="hidden" name="customer_loyalty_csrf" value="{{ customer_loyalty_csrf }}">
+                    <div class="customer-section-title">Your details</div>
+                    <div class="customer-profile-grid">
+                        <div>
+                            <label class="form-label" for="customer-name">Name</label>
+                            <input
+                                id="customer-name"
+                                name="name"
+                                type="text"
+                                autocomplete="name"
+                                class="form-control"
+                                placeholder="Your name"
+                                value="{{ customer_name }}"
+                                maxlength="300"
+                            >
+                        </div>
+                        <div>
+                            <label class="form-label" for="customer-email">Email</label>
+                            <input
+                                id="customer-email"
+                                name="email"
+                                type="email"
+                                autocomplete="email"
+                                class="form-control"
+                                placeholder="you@example.com"
+                                value="{{ customer_email }}"
+                                maxlength="254"
+                            >
+                        </div>
+                    </div>
+                    <button type="submit" class="btn app-btn-primary app-btn customer-save-button">Save Details</button>
+                </form>
 
                 {% if lookup.next_expiry %}
                     <div class="customer-expiry">
@@ -108,8 +122,65 @@
                         <div class="customer-top-reward">Your rewards balance is ready to use in store.</div>
                     {% endif %}
                 </div>
+
+                <form method="post" action="{{ url_for('customer_loyalty_logout') }}" class="customer-logout-form">
+                    <input type="hidden" name="customer_loyalty_csrf" value="{{ customer_loyalty_csrf }}">
+                    <button type="submit" class="btn app-btn-secondary app-btn">Use another phone number</button>
+                </form>
             </div>
+        {% else %}
+            <form method="post" action="{{ url_for('customer_loyalty') }}" class="customer-lookup-form" data-loading-form data-loading-text="Finding your rewards">
+                <label class="form-label" for="phone">Phone number</label>
+                <div class="customer-phone-row">
+                    <input
+                        id="phone"
+                        name="phone"
+                        type="tel"
+                        inputmode="tel"
+                        autocomplete="tel"
+                        class="form-control customer-phone-input"
+                        placeholder="04xx xxx xxx"
+                        value="{{ phone_value }}"
+                        required
+                    >
+                    <button type="submit" class="btn app-btn-primary app-btn customer-submit">Continue</button>
+                </div>
+            </form>
+
+            {% if error %}
+                <div class="alert alert-warning customer-message" role="alert">{{ error }}</div>
+            {% endif %}
+
+            {% if not_found %}
+                <div class="customer-empty-state" role="status">
+                    <div class="customer-empty-title">No rewards account found</div>
+                    <p>We could not find a loyalty account for that phone number. Try the number you used in store, with or without the country code.</p>
+                </div>
+            {% endif %}
         {% endif %}
     </section>
 </div>
+
+<div class="customer-loading-overlay" id="customer-loading-overlay" hidden>
+    <div class="customer-loading-card" role="status" aria-live="polite">
+        <div class="customer-spinner" aria-hidden="true"></div>
+        <div class="customer-loading-title" id="customer-loading-title">Finding your rewards</div>
+    </div>
+</div>
+
+<script>
+    (function () {
+        const overlay = document.getElementById("customer-loading-overlay");
+        const title = document.getElementById("customer-loading-title");
+        if (!overlay || !title) return;
+
+        document.querySelectorAll("[data-loading-form]").forEach((form) => {
+            form.addEventListener("submit", () => {
+                if (!form.checkValidity()) return;
+                title.textContent = form.dataset.loadingText || "Loading";
+                overlay.hidden = false;
+            });
+        });
+    })();
+</script>
 {% endblock %}

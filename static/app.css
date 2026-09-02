@@ -462,6 +462,23 @@ a:hover {
     padding: 12px 14px;
 }
 
+.customer-profile-form {
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 16px;
+}
+
+.customer-profile-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 10px 0 14px;
+}
+
+.customer-save-button {
+    min-height: 44px;
+}
+
 .customer-section {
     border: 1px solid var(--card-border);
     border-radius: 14px;
@@ -545,6 +562,57 @@ a:hover {
 .customer-top-reward {
     color: #0f766e;
     font-weight: 700;
+}
+
+.customer-logout-form {
+    display: flex;
+    justify-content: center;
+}
+
+.customer-loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 5000;
+    display: grid;
+    place-items: center;
+    background: rgba(244, 242, 238, 0.84);
+    backdrop-filter: blur(8px);
+    padding: 22px;
+}
+
+.customer-loading-overlay[hidden] {
+    display: none;
+}
+
+.customer-loading-card {
+    width: min(100%, 320px);
+    background: #ffffff;
+    border: 1px solid var(--card-border);
+    border-radius: 16px;
+    box-shadow: var(--shadow-lg);
+    display: grid;
+    justify-items: center;
+    gap: 14px;
+    padding: 28px 24px;
+    text-align: center;
+}
+
+.customer-spinner {
+    width: 42px;
+    height: 42px;
+    border: 4px solid rgba(14, 165, 233, 0.18);
+    border-top-color: #0f766e;
+    border-radius: 50%;
+    animation: customerSpin 0.75s linear infinite;
+}
+
+.customer-loading-title {
+    font-family: "Space Grotesk", sans-serif;
+    font-weight: 700;
+}
+
+@keyframes customerSpin {
+    to { transform: rotate(360deg); }
 }
 
 @media (max-width: 900px) {
@@ -1017,6 +1085,8 @@ a:hover {
     .customer-balance { text-align: left; }
     .customer-balance span { font-size: 2.55rem; }
     .customer-stat-grid { grid-template-columns: 1fr; }
+    .customer-profile-grid { grid-template-columns: 1fr; }
+    .customer-save-button { width: 100%; }
     .customer-progress-head { align-items: flex-start; flex-direction: column; }
 }
 

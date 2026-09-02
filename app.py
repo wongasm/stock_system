@@ -7,6 +7,7 @@ import os
 from math import ceil
 from decimal import Decimal, InvalidOperation
 import csv
+import secrets
 from io import BytesIO, StringIO
 from itertools import groupby
 from collections import defaultdict
@@ -20,7 +21,7 @@ from sqlalchemy.exc import SQLAlchemyError, OperationalError, IntegrityError
 from sqlalchemy import cast, Numeric, and_, inspect
 from flask_mail import Mail, Message
 from dotenv import load_dotenv
-from square_api import fetch_sales_for_store, fetch_loyalty_summary, fetch_loyalty_report, fetch_loyalty_accounts, fetch_customer_directory, fetch_loyalty_program_details, fetch_loyalty_accounts_by_phone
+from square_api import fetch_sales_for_store, fetch_loyalty_summary, fetch_loyalty_report, fetch_loyalty_accounts, fetch_customer_directory, fetch_loyalty_program_details, fetch_loyalty_accounts_by_phone, fetch_customer_profile, update_customer_profile
 from pathlib import Path
 from square_helpers import ITEM_CATEGORY_MAP
 from freezer_pack_helpers import calculate_ingredients_for_freezer_pack
@@ -619,6 +620,7 @@ LOYALTY_ACCOUNTS_REFRESH = 3000     # 50 min — background rescan cadence
 LOYALTY_ACCOUNTS_STALE_MAX = 21600  # 6h — web serve-stale fallback
 LOYALTY_LOOKUP_WINDOW_SECONDS = 300
 LOYALTY_LOOKUP_MAX_ATTEMPTS = 12
+LOYALTY_CUSTOMER_SESSION_SECONDS = 1800
 _loyalty_lookup_attempts = defaultdict(list)
 
 
@@ -718,6 +720,88 @@ def _loyalty_lookup_rate_limited(remote_key):
     return False
 
 
+def _lookup_loyalty_account_for_phone(phone_value):
+    direct = fetch_loyalty_accounts_by_phone(_phone_e164_candidates(phone_value))
+    accounts = direct.get("accounts", []) if direct.get("ok") else []
+    account, matched_phone = _find_loyalty_account_by_phone(phone_value, accounts)
+    if account:
+        return account, matched_phone
+
+    accounts = get_loyalty_accounts()
+    account, matched_phone = _find_loyalty_account_by_phone(phone_value, accounts)
+    if account:
+        return account, matched_phone
+
+    directory = get_customer_directory()
+    return _find_loyalty_account_by_phone(phone_value, accounts, directory)
+
+
+def _store_customer_loyalty_session(account, matched_phone):
+    token = secrets.token_urlsafe(32)
+    cache_set(f"customer_loyalty_session:{token}", {
+        "account": account,
+        "matched_phone": matched_phone or account.get("phone"),
+    })
+    session["customer_loyalty_token"] = token
+    session["customer_loyalty_csrf"] = secrets.token_urlsafe(32)
+
+
+def _current_customer_loyalty_session():
+    token = session.get("customer_loyalty_token")
+    if not token:
+        return None
+    data, age = cache_read(f"customer_loyalty_session:{token}")
+    if not data or age is None or age > LOYALTY_CUSTOMER_SESSION_SECONDS:
+        session.pop("customer_loyalty_token", None)
+        return None
+    return data
+
+
+def _split_customer_name(full_name):
+    parts = " ".join((full_name or "").strip().split()).split(" ", 1)
+    if not parts or not parts[0]:
+        return None, None
+    return parts[0], parts[1] if len(parts) > 1 else None
+
+
+def _profile_form_value(customer, field):
+    value = (customer or {}).get(field)
+    return value or ""
+
+
+def _customer_profile_for_account(account):
+    customer_id = account.get("customer_id")
+    if not customer_id:
+        return {"ok": False, "customer": None}
+
+    profile = fetch_customer_profile(customer_id)
+    if profile.get("ok"):
+        return profile
+
+    cached = get_customer_directory().get(customer_id)
+    if cached:
+        return {"ok": True, "customer": cached}
+    return profile
+
+
+def _patch_customer_directory_cache(customer):
+    if not customer or not customer.get("id"):
+        return
+    data, _age = cache_read("customer_directory_v1")
+    if not isinstance(data, dict):
+        return
+    customers = data.get("customers")
+    if not isinstance(customers, dict):
+        return
+    customers[customer["id"]] = customer
+    cache_set("customer_directory_v1", data)
+
+
+def _valid_customer_loyalty_csrf():
+    token = session.get("customer_loyalty_csrf")
+    return bool(token and request.form.get("customer_loyalty_csrf") == token)
+
+
 def _find_loyalty_account_by_phone(phone, accounts, directory=None):
     target_keys = _phone_lookup_keys(phone)
     if not target_keys:
@@ -789,12 +873,10 @@ def _build_customer_loyalty_view(account, matched_phone, program):
 
 @app.route("/loyalty", methods=["GET", "POST"])
 def customer_loyalty():
-    """Public customer lookup for Square loyalty account details by phone."""
+    """Public customer login for Square loyalty account details by phone."""
     phone_value = ""
-    lookup = None
     error = None
     not_found = False
-    program = {"ok": False, "points_name": "Points", "reward_tiers": []}
 
     if request.method == "POST":
         phone_value = (request.form.get("phone") or "").strip()
@@ -803,29 +885,109 @@ def customer_loyalty():
         elif _loyalty_lookup_rate_limited(request.remote_addr):
             error = "Too many lookup attempts. Please wait a few minutes and try again."
         else:
-            direct = fetch_loyalty_accounts_by_phone(_phone_e164_candidates(phone_value))
-            accounts = direct.get("accounts", []) if direct.get("ok") else []
-            account, matched_phone = _find_loyalty_account_by_phone(phone_value, accounts)
-            if not account:
-                accounts = get_loyalty_accounts()
-                account, matched_phone = _find_loyalty_account_by_phone(phone_value, accounts)
-            if not account:
-                directory = get_customer_directory()
-                account, matched_phone = _find_loyalty_account_by_phone(phone_value, accounts, directory)
+            account, matched_phone = _lookup_loyalty_account_for_phone(phone_value)
             if account:
-                program = get_loyalty_program_details()
-                lookup = _build_customer_loyalty_view(account, matched_phone, program)
+                _store_customer_loyalty_session(account, matched_phone)
+                return redirect(url_for("customer_loyalty_account"))
             else:
                 not_found = True
 
     return render_template(
         "customer_loyalty.html",
+        mode="login",
         phone_value=phone_value,
-        lookup=lookup,
         error=error,
         not_found=not_found,
-        program=program,
     )
+
+
+@app.route("/loyalty/account", methods=["GET"])
+def customer_loyalty_account():
+    """Logged-in customer loyalty result page."""
+    lookup_session = _current_customer_loyalty_session()
+    if not lookup_session:
+        return redirect(url_for("customer_loyalty"))
+
+    account = lookup_session.get("account") or {}
+    matched_phone = lookup_session.get("matched_phone") or account.get("phone")
+    program = get_loyalty_program_details()
+    profile = _customer_profile_for_account(account)
+    customer = profile.get("customer") or {}
+
+    return render_template(
+        "customer_loyalty.html",
+        mode="account",
+        lookup=_build_customer_loyalty_view(account, matched_phone, program),
+        profile_ok=profile.get("ok", False),
+        customer=customer,
+        customer_name=_profile_form_value(customer, "name"),
+        customer_email=_profile_form_value(customer, "email"),
+        customer_loyalty_csrf=session.get("customer_loyalty_csrf"),
+        profile_message=session.pop("loyalty_profile_message", None),
+        profile_error=session.pop("loyalty_profile_error", None),
+    )
+
+
+@app.route("/loyalty/profile", methods=["POST"])
+def update_customer_loyalty_profile():
+    """Let a looked-up customer fill in or update their Square customer profile."""
+    lookup_session = _current_customer_loyalty_session()
+    if not lookup_session:
+        return redirect(url_for("customer_loyalty"))
+    if not _valid_customer_loyalty_csrf():
+        session["loyalty_profile_error"] = "Please refresh the page and try again."
+        return redirect(url_for("customer_loyalty_account"))
+
+    account = lookup_session.get("account") or {}
+    customer_id = account.get("customer_id")
+    name = " ".join((request.form.get("name") or "").strip().split())
+    email = (request.form.get("email") or "").strip()
+
+    if not customer_id:
+        session["loyalty_profile_error"] = "We could not find the linked Square customer profile for this rewards account."
+        return redirect(url_for("customer_loyalty_account"))
+    if len(name) > 300:
+        session["loyalty_profile_error"] = "Please keep your name under 300 characters."
+        return redirect(url_for("customer_loyalty_account"))
+    if email and (len(email) > 254 or not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email)):
+        session["loyalty_profile_error"] = "Enter a valid email address."
+        return redirect(url_for("customer_loyalty_account"))
+    if not name and not email:
+        session["loyalty_profile_error"] = "Add your name or email before saving."
+        return redirect(url_for("customer_loyalty_account"))
+
+    profile = _customer_profile_for_account(account)
+    customer = profile.get("customer") or {}
+    given_name, family_name = _split_customer_name(name)
+    matched_phone = lookup_session.get("matched_phone") or account.get("phone")
+    profile_phone = customer.get("phone") or matched_phone
+    result = update_customer_profile(
+        customer_id,
+        given_name=given_name,
+        family_name=family_name,
+        email_address=email or None,
+        phone_number=profile_phone,
+        version=customer.get("version"),
+        update_name=bool(name),
+        update_email=bool(email),
+    )
+
+    if result.get("ok"):
+        _patch_customer_directory_cache(result.get("customer"))
+        session["loyalty_profile_message"] = "Your details have been saved."
+    else:
+        session["loyalty_profile_error"] = "We could not save your details in Square right now. Please try again soon."
+
+    return redirect(url_for("customer_loyalty_account"))
+
+
+@app.route("/loyalty/logout", methods=["POST"])
+def customer_loyalty_logout():
+    if not _valid_customer_loyalty_csrf():
+        return redirect(url_for("customer_loyalty_account"))
+    session.pop("customer_loyalty_token", None)
+    session.pop("customer_loyalty_csrf", None)
+    return redirect(url_for("customer_loyalty"))
 
 
 def _utc_bounds(start_date, end_date):
