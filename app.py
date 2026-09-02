@@ -1019,8 +1019,12 @@ def customer_loyalty_signup():
             error = "Please refresh the page and try again."
         elif len(_phone_digits(phone_value)) < 8 or not e164_phone:
             error = "Enter a valid Australian phone number."
+        elif not name_value:
+            error = "Enter your name to join Bing Chillin Rewards."
         elif len(name_value) > 300:
             error = "Please keep your name under 300 characters."
+        elif not email_value:
+            error = "Enter your email to join Bing Chillin Rewards."
         elif email_value and not _valid_email_address(email_value):
             error = "Enter a valid email address."
         elif request.form.get("signup_consent") != "yes":
