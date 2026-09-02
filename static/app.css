@@ -21,6 +21,46 @@
     --danger: #ef4444;
 }
 
+@font-face {
+    font-family: "henderson-sans-basic";
+    src: url("https://use.typekit.net/af/62e1ce/00000000000000007735d327/31/l?subset_id=2&fvd=n6&v=3") format("woff2");
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "henderson-sans-basic";
+    src: url("https://use.typekit.net/af/13c26d/00000000000000007735d329/31/l?subset_id=2&fvd=n7&v=3") format("woff2");
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "sofia-pro-soft";
+    src: url("https://use.typekit.net/af/ef39b0/00000000000000007735a14f/31/l?subset_id=2&fvd=n3&v=3") format("woff2");
+    font-style: normal;
+    font-weight: 300;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "sofia-pro-soft";
+    src: url("https://use.typekit.net/af/707483/00000000000000007735a154/31/l?subset_id=2&fvd=n4&v=3") format("woff2");
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: "sofia-pro-soft";
+    src: url("https://use.typekit.net/af/f5916e/00000000000000007735a147/31/l?subset_id=2&fvd=n7&v=3") format("woff2");
+    font-style: normal;
+    font-weight: 700;
+    font-display: swap;
+}
+
 * {
     box-sizing: border-box;
 }
@@ -291,49 +331,212 @@ a:hover {
     margin-bottom: 24px;
 }
 
+.customer-loyalty-body {
+    --bc-tan: #f3c98b;
+    --bc-cream: #fff8ec;
+    --bc-cream-deep: #f7deb4;
+    --bc-brown: #493208;
+    --bc-brown-soft: #705321;
+    --bc-ink: #424242;
+    --bc-pistachio: #8a9f58;
+    --bc-berry: #c85c4a;
+    --bc-card-border: rgba(73, 50, 8, 0.16);
+    background: var(--bc-tan);
+}
+
+.customer-loyalty-shell.container {
+    align-items: flex-start !important;
+    background: #f3c98b;
+    justify-content: center !important;
+    max-width: none;
+    padding: 0;
+    width: 100%;
+}
+
 .customer-loyalty-page {
     align-self: flex-start;
-    width: min(100%, 760px);
-    padding: 32px 0;
+    background-color: var(--bc-tan);
+    background-image:
+        linear-gradient(180deg, rgba(255, 248, 236, 0.62), rgba(243, 201, 139, 0.92)),
+        url("https://images.squarespace-cdn.com/content/v1/63c1e9f25d20b163195a60be/1673652728483-7AUQ1W2X33LYHTBBMPP6/Website+BG+2-02.jpg?format=2500w");
+    background-position: center top;
+    background-size: cover;
+    color: var(--bc-brown);
+    font-family: "sofia-pro-soft", "Poppins", "Work Sans", sans-serif;
+    letter-spacing: 0;
+    min-height: 100svh;
+    padding: 34px 20px 42px;
+    width: 100%;
+}
+
+.customer-loyalty-page * {
+    letter-spacing: 0;
 }
 
 .customer-loyalty-card {
-    padding: 30px;
-    border-radius: 16px !important;
-    overflow: hidden;
+    display: grid;
+    gap: 24px;
+    margin: 0 auto;
+    max-width: 880px;
+    width: 100%;
 }
 
 .customer-brand-row {
     display: flex;
     align-items: center;
-    gap: 14px;
-    margin-bottom: 24px;
+    justify-content: space-between;
+    gap: 18px;
 }
 
-.customer-brand-mark {
-    width: 58px;
-    height: 58px;
-    border-radius: 14px;
-    object-fit: cover;
-    box-shadow: 0 14px 24px rgba(15, 23, 42, 0.16);
+.customer-wordmark-link {
+    display: inline-flex;
+    max-width: 240px;
+    min-width: 0;
+}
+
+.customer-wordmark {
+    display: block;
+    height: auto;
+    width: 100%;
+}
+
+.customer-brand-pill {
+    border: 2px solid rgba(73, 50, 8, 0.24);
+    border-radius: 999px;
+    color: var(--bc-brown);
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 10px 14px;
+    white-space: nowrap;
+}
+
+.customer-hero-lockup {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 138px;
+    align-items: end;
+    gap: 24px;
+}
+
+.customer-hero-copy {
+    min-width: 0;
+}
+
+.customer-hero-mascot {
+    align-self: end;
+    display: block;
+    filter: drop-shadow(0 16px 20px rgba(73, 50, 8, 0.18));
+    height: auto;
+    justify-self: end;
+    max-height: 236px;
+    object-fit: contain;
+    width: 132px;
+}
+
+.customer-loyalty-card--account .customer-hero-mascot {
+    width: 106px;
 }
 
 .customer-kicker {
-    color: #0f766e;
-    font-size: 0.78rem;
+    color: var(--bc-brown-soft);
+    font-size: 0.86rem;
     font-weight: 700;
-    letter-spacing: 0.7px;
-    text-transform: uppercase;
+    margin-bottom: 6px;
+    text-transform: lowercase;
 }
 
 .customer-title {
-    margin: 2px 0 0;
-    font-size: 2rem;
-    line-height: 1.08;
+    color: var(--bc-brown);
+    font-family: "henderson-sans-basic", "Space Grotesk", "Arial Rounded MT Bold", sans-serif;
+    font-size: 3.1rem;
+    font-weight: 600;
+    line-height: 1.04;
+    margin: 0;
+    max-width: 640px;
+    text-transform: lowercase;
+}
+
+.customer-intro {
+    color: var(--bc-ink);
+    font-size: 1.08rem;
+    font-weight: 300;
+    line-height: 1.45;
+    margin: 12px 0 0;
+    max-width: 560px;
+}
+
+.customer-panel {
+    background: rgba(255, 248, 236, 0.94);
+    border: 2px solid var(--bc-card-border);
+    border-radius: 8px;
+    box-shadow: 0 18px 42px rgba(73, 50, 8, 0.14);
+    padding: 24px;
+}
+
+.customer-loyalty-page .form-label {
+    color: var(--bc-brown);
+    font-family: "sofia-pro-soft", "Poppins", "Work Sans", sans-serif;
+    font-weight: 700;
+    margin-bottom: 8px;
+    text-transform: lowercase;
+}
+
+.customer-loyalty-page .form-control {
+    background: #fffdf8;
+    border: 2px solid rgba(73, 50, 8, 0.18);
+    border-radius: 8px;
+    color: var(--bc-brown);
+    font-family: "sofia-pro-soft", "Poppins", "Work Sans", sans-serif;
+    font-size: 1rem;
+    min-height: 52px;
+}
+
+.customer-loyalty-page .form-control:focus {
+    background: #ffffff;
+    border-color: var(--bc-brown);
+    box-shadow: 0 0 0 4px rgba(73, 50, 8, 0.12);
+    color: var(--bc-brown);
+}
+
+.customer-loyalty-page .form-control::placeholder {
+    color: rgba(73, 50, 8, 0.46);
+}
+
+.customer-loyalty-page .app-btn {
+    border-radius: 8px !important;
+    font-family: "sofia-pro-soft", "Poppins", "Work Sans", sans-serif;
+    font-weight: 700 !important;
+    min-height: 46px;
+    text-transform: lowercase;
+}
+
+.customer-loyalty-page .app-btn-primary {
+    background: var(--bc-brown) !important;
+    border-color: var(--bc-brown) !important;
+    color: var(--bc-tan) !important;
+}
+
+.customer-loyalty-page .app-btn-primary:hover,
+.customer-loyalty-page .app-btn-primary:focus {
+    background: #2f2107 !important;
+    border-color: #2f2107 !important;
+    color: var(--bc-cream) !important;
+}
+
+.customer-loyalty-page .app-btn-secondary {
+    background: transparent !important;
+    border: 2px solid rgba(73, 50, 8, 0.24) !important;
+    color: var(--bc-brown) !important;
+}
+
+.customer-loyalty-page .app-btn-secondary:hover,
+.customer-loyalty-page .app-btn-secondary:focus {
+    background: rgba(73, 50, 8, 0.08) !important;
+    color: var(--bc-brown) !important;
 }
 
 .customer-lookup-form {
-    margin-bottom: 16px;
+    margin-bottom: 0;
 }
 
 .customer-phone-row {
@@ -343,36 +546,39 @@ a:hover {
 }
 
 .customer-phone-input {
-    min-height: 48px;
+    min-height: 52px;
 }
 
 .customer-submit {
-    min-width: 112px;
+    min-width: 118px;
 }
 
 .customer-message {
+    border-radius: 8px;
+    font-family: "sofia-pro-soft", "Poppins", "Work Sans", sans-serif;
     margin: 16px 0 0;
 }
 
 .customer-empty-state {
-    background: rgba(245, 158, 11, 0.12);
-    border: 1px solid rgba(245, 158, 11, 0.28);
-    border-radius: 14px;
-    color: #92400e;
+    background: #fff1d8;
+    border: 2px solid rgba(73, 50, 8, 0.14);
+    border-radius: 8px;
+    color: var(--bc-brown-soft);
     margin-top: 16px;
     padding: 18px;
 }
 
 .customer-empty-title {
-    color: #78350f;
-    font-family: "Space Grotesk", sans-serif;
+    color: var(--bc-brown);
+    font-family: "henderson-sans-basic", "Space Grotesk", sans-serif;
     font-weight: 700;
     margin-bottom: 4px;
+    text-transform: lowercase;
 }
 
 .customer-empty-state p {
     margin: 0;
-    color: #92400e;
+    color: var(--bc-brown-soft);
     font-size: 0.92rem;
 }
 
@@ -387,22 +593,21 @@ a:hover {
     justify-content: space-between;
     align-items: center;
     gap: 18px;
-    background: linear-gradient(135deg, #0f172a, #115e59);
-    color: #ffffff;
-    border-radius: 14px;
+    background: var(--bc-brown);
+    color: var(--bc-cream);
+    border-radius: 8px;
     padding: 22px;
 }
 
 .customer-result-label {
-    color: rgba(255, 255, 255, 0.76);
-    font-size: 0.78rem;
+    color: rgba(255, 248, 236, 0.78);
+    font-size: 0.82rem;
     font-weight: 700;
-    letter-spacing: 0.7px;
-    text-transform: uppercase;
+    text-transform: lowercase;
 }
 
 .customer-result-sub {
-    color: rgba(255, 255, 255, 0.72);
+    color: rgba(255, 248, 236, 0.72);
     font-size: 0.88rem;
     margin-top: 4px;
 }
@@ -413,16 +618,17 @@ a:hover {
 
 .customer-balance span {
     display: block;
-    font-family: "Space Grotesk", sans-serif;
+    font-family: "henderson-sans-basic", "Space Grotesk", sans-serif;
     font-size: 3rem;
-    font-weight: 700;
+    font-weight: 600;
     line-height: 0.95;
 }
 
 .customer-balance small {
-    color: rgba(255, 255, 255, 0.74);
+    color: rgba(255, 248, 236, 0.74);
     font-size: 0.88rem;
     font-weight: 600;
+    text-transform: lowercase;
 }
 
 .customer-stat-grid {
@@ -432,40 +638,40 @@ a:hover {
 }
 
 .customer-stat {
-    background: rgba(148, 163, 184, 0.08);
-    border: 1px solid var(--card-border);
-    border-radius: 12px;
+    background: rgba(255, 253, 248, 0.78);
+    border: 2px solid rgba(73, 50, 8, 0.12);
+    border-radius: 8px;
     padding: 14px;
 }
 
 .customer-stat span {
     display: block;
-    color: var(--page-ink-soft);
+    color: var(--bc-brown-soft);
     font-size: 0.74rem;
     font-weight: 700;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
+    text-transform: lowercase;
 }
 
 .customer-stat strong {
     display: block;
-    font-family: "Space Grotesk", sans-serif;
+    color: var(--bc-brown);
+    font-family: "henderson-sans-basic", "Space Grotesk", sans-serif;
     font-size: 1.08rem;
     margin-top: 4px;
 }
 
 .customer-expiry {
-    background: rgba(249, 115, 22, 0.1);
-    border: 1px solid rgba(249, 115, 22, 0.24);
-    border-radius: 12px;
-    color: #9a3412;
+    background: rgba(200, 92, 74, 0.12);
+    border: 2px solid rgba(200, 92, 74, 0.22);
+    border-radius: 8px;
+    color: #8f3228;
     font-weight: 700;
     padding: 12px 14px;
 }
 
 .customer-profile-form {
-    border: 1px solid var(--card-border);
-    border-radius: 14px;
+    border: 2px solid rgba(73, 50, 8, 0.12);
+    border-radius: 8px;
     padding: 16px;
 }
 
@@ -481,17 +687,16 @@ a:hover {
 }
 
 .customer-section {
-    border: 1px solid var(--card-border);
-    border-radius: 14px;
+    border: 2px solid rgba(73, 50, 8, 0.12);
+    border-radius: 8px;
     padding: 16px;
 }
 
 .customer-section-title {
-    color: var(--page-ink-soft);
+    color: var(--bc-brown-soft);
     font-size: 0.76rem;
     font-weight: 700;
-    letter-spacing: 0.6px;
-    text-transform: uppercase;
+    text-transform: lowercase;
 }
 
 .customer-reward-list {
@@ -505,10 +710,10 @@ a:hover {
     display: inline-flex;
     align-items: baseline;
     gap: 8px;
-    background: rgba(34, 197, 94, 0.13);
-    border: 1px solid rgba(34, 197, 94, 0.25);
+    background: rgba(138, 159, 88, 0.18);
+    border: 2px solid rgba(138, 159, 88, 0.24);
     border-radius: 999px;
-    color: #14532d;
+    color: var(--bc-brown);
     padding: 8px 12px;
 }
 
@@ -517,12 +722,12 @@ a:hover {
 }
 
 .customer-reward-pill small {
-    color: #166534;
+    color: #596a31;
     font-weight: 600;
 }
 
 .customer-progress-section {
-    background: #ffffff;
+    background: rgba(255, 253, 248, 0.66);
 }
 
 .customer-progress-head {
@@ -534,34 +739,35 @@ a:hover {
 }
 
 .customer-next-name {
-    font-family: "Space Grotesk", sans-serif;
+    color: var(--bc-brown);
+    font-family: "henderson-sans-basic", "Space Grotesk", sans-serif;
     font-size: 1.18rem;
-    font-weight: 700;
+    font-weight: 600;
     margin-top: 2px;
 }
 
 .customer-remaining {
-    color: #0284c7;
+    color: var(--bc-berry);
     font-weight: 700;
     white-space: nowrap;
 }
 
 .customer-progress-track {
-    background: rgba(148, 163, 184, 0.2);
+    background: rgba(73, 50, 8, 0.14);
     border-radius: 999px;
     height: 12px;
     overflow: hidden;
 }
 
 .customer-progress-fill {
-    background: linear-gradient(90deg, #f97316, #14b8a6);
+    background: linear-gradient(90deg, var(--bc-brown), var(--bc-berry), var(--bc-pistachio));
     border-radius: inherit;
     height: 100%;
     min-width: 4px;
 }
 
 .customer-top-reward {
-    color: #0f766e;
+    color: var(--bc-brown);
     font-weight: 700;
 }
 
@@ -576,7 +782,7 @@ a:hover {
     z-index: 5000;
     display: grid;
     place-items: center;
-    background: rgba(244, 242, 238, 0.84);
+    background: rgba(243, 201, 139, 0.86);
     backdrop-filter: blur(8px);
     padding: 22px;
 }
@@ -587,10 +793,10 @@ a:hover {
 
 .customer-loading-card {
     width: min(100%, 320px);
-    background: #ffffff;
-    border: 1px solid var(--card-border);
-    border-radius: 16px;
-    box-shadow: var(--shadow-lg);
+    background: var(--bc-cream);
+    border: 2px solid rgba(73, 50, 8, 0.16);
+    border-radius: 8px;
+    box-shadow: 0 18px 42px rgba(73, 50, 8, 0.14);
     display: grid;
     justify-items: center;
     gap: 14px;
@@ -601,15 +807,17 @@ a:hover {
 .customer-spinner {
     width: 42px;
     height: 42px;
-    border: 4px solid rgba(14, 165, 233, 0.18);
-    border-top-color: #0f766e;
+    border: 4px solid rgba(73, 50, 8, 0.14);
+    border-top-color: var(--bc-brown);
     border-radius: 50%;
     animation: customerSpin 0.75s linear infinite;
 }
 
 .customer-loading-title {
-    font-family: "Space Grotesk", sans-serif;
+    color: var(--bc-brown);
+    font-family: "henderson-sans-basic", "Space Grotesk", sans-serif;
     font-weight: 700;
+    text-transform: lowercase;
 }
 
 @keyframes customerSpin {
@@ -1075,11 +1283,18 @@ a:hover {
     .attention-icon { width: 38px; height: 38px; font-size: 1.05rem; }
     .attention-value { font-size: 0.98rem; }
 
-    .customer-loyalty-page { padding: 18px 0; }
-    .customer-loyalty-card { padding: 22px 18px; }
-    .customer-brand-row { align-items: flex-start; }
-    .customer-brand-mark { width: 48px; height: 48px; }
-    .customer-title { font-size: 1.55rem; }
+    .customer-loyalty-page { padding: 20px 14px 30px; }
+    .customer-loyalty-card { gap: 18px; }
+    .customer-brand-row { align-items: center; gap: 12px; }
+    .customer-wordmark-link { max-width: 190px; }
+    .customer-brand-pill { font-size: 0.8rem; padding: 8px 10px; }
+    .customer-hero-lockup { grid-template-columns: minmax(0, 1fr) 82px; gap: 12px; }
+    .customer-hero-mascot { max-height: 146px; width: 78px; }
+    .customer-loyalty-card--account .customer-hero-mascot { width: 70px; }
+    .customer-kicker { font-size: 0.8rem; }
+    .customer-title { font-size: 2.2rem; }
+    .customer-intro { font-size: 0.98rem; margin-top: 8px; }
+    .customer-panel { padding: 16px; }
     .customer-phone-row { grid-template-columns: 1fr; }
     .customer-submit { min-height: 46px; width: 100%; }
     .customer-balance-panel { align-items: flex-start; flex-direction: column; }
@@ -1097,4 +1312,9 @@ a:hover {
     .kpi-label { font-size: 0.6rem; }
     .mini-stat .m-value { font-size: 1.1rem; }
     .bar-row { grid-template-columns: 68px 1fr 46px; }
+    .customer-title { font-size: 1.95rem; }
+    .customer-wordmark-link { max-width: 168px; }
+    .customer-brand-pill { font-size: 0.74rem; padding: 7px 9px; }
+    .customer-hero-lockup { grid-template-columns: minmax(0, 1fr) 68px; }
+    .customer-hero-mascot { width: 62px; }
 }

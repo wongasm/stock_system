@@ -8,8 +8,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
     <link href="{{ url_for('static', filename='app.css') }}" rel="stylesheet">
 </head>
-<body>
-    <div class="container d-flex justify-content-center align-items-center" style="min-height: 100vh;">
+<body class="{% block body_class %}{% endblock %}">
+    <div class="container d-flex justify-content-center align-items-center {% block page_shell_class %}{% endblock %}" style="min-height: 100vh;">
         {% block content %}{% endblock %}
     </div>
 </body>

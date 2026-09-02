@@ -1,20 +1,54 @@
 {% extends "base_no_sidebar.html" %}
 
 {% block title %}Bing Chillin Rewards{% endblock %}
+{% block body_class %}customer-loyalty-body{% endblock %}
+{% block page_shell_class %}customer-loyalty-shell{% endblock %}
 
 {% block content %}
+{% set brand_wordmark_url = "https://images.squarespace-cdn.com/content/v1/63c1e9f25d20b163195a60be/1673652734905-CB5NG77AZ032FROK8KQJ/TextLogoShort+-+Medium.png?format=1500w" %}
+{% set brand_mascot_url = "https://images.squarespace-cdn.com/content/v1/63c1e9f25d20b163195a60be/1673652728395-Q9WGOCQ5OTG1SC3ZX3NL/MainLogo+-+Large.png" %}
 <div class="customer-loyalty-page">
-    <section class="customer-loyalty-card app-card" aria-labelledby="loyalty-title">
+    <section class="customer-loyalty-card customer-loyalty-card--{{ mode }}" aria-labelledby="loyalty-title">
         <div class="customer-brand-row">
-            <img src="{{ url_for('static', filename='favicon.png') }}" alt="Bing Chillin" class="customer-brand-mark">
-            <div>
-                <div class="customer-kicker">Bing Chillin Rewards</div>
-                <h1 id="loyalty-title" class="customer-title">
-                    {% if mode == "account" %}Your Bing Bucks{% else %}Check your Bing Bucks{% endif %}
-                </h1>
-            </div>
+            <a href="https://www.bingchillin.com.au/" class="customer-wordmark-link" aria-label="Bing Chillin home">
+                <img
+                    src="{{ brand_wordmark_url }}"
+                    alt="bing chillin"
+                    class="customer-wordmark"
+                    width="1200"
+                    height="194"
+                    decoding="async"
+                >
+            </a>
+            <div class="customer-brand-pill">rewards</div>
         </div>
 
+        <div class="customer-hero-lockup">
+            <div class="customer-hero-copy">
+                <div class="customer-kicker">Bing Chillin Rewards</div>
+                <h1 id="loyalty-title" class="customer-title">
+                    {% if mode == "account" %}your bing bucks{% else %}check your bing bucks{% endif %}
+                </h1>
+                <p class="customer-intro">
+                    {% if mode == "account" %}
+                        Your rewards are ready for your next dessert run.
+                    {% else %}
+                        Pop in the phone number you use in store to see your balance.
+                    {% endif %}
+                </p>
+            </div>
+            <img
+                src="{{ brand_mascot_url }}"
+                alt=""
+                class="customer-hero-mascot"
+                width="1543"
+                height="2636"
+                aria-hidden="true"
+                decoding="async"
+            >
+        </div>
+
+        <div class="customer-panel">
         {% if mode == "account" %}
             {% if profile_message %}
                 <div class="alert alert-success customer-message" role="status">{{ profile_message }}</div>
@@ -52,10 +86,10 @@
 
                 <form method="post" action="{{ url_for('update_customer_loyalty_profile') }}" class="customer-profile-form" data-loading-form data-loading-text="Saving your details">
                     <input type="hidden" name="customer_loyalty_csrf" value="{{ customer_loyalty_csrf }}">
-                    <div class="customer-section-title">Your details</div>
+                    <div class="customer-section-title">your details</div>
                     <div class="customer-profile-grid">
                         <div>
-                            <label class="form-label" for="customer-name">Name</label>
+                            <label class="form-label" for="customer-name">name</label>
                             <input
                                 id="customer-name"
                                 name="name"
@@ -68,7 +102,7 @@
                             >
                         </div>
                         <div>
-                            <label class="form-label" for="customer-email">Email</label>
+                            <label class="form-label" for="customer-email">email</label>
                             <input
                                 id="customer-email"
                                 name="email"
@@ -81,7 +115,7 @@
                             >
                         </div>
                     </div>
-                    <button type="submit" class="btn app-btn-primary app-btn customer-save-button">Save Details</button>
+                    <button type="submit" class="btn app-btn-primary app-btn customer-save-button">save details</button>
                 </form>
 
                 {% if lookup.next_expiry %}
@@ -92,7 +126,7 @@
 
                 {% if lookup.available_rewards %}
                     <div class="customer-section">
-                        <div class="customer-section-title">Ready to redeem</div>
+                        <div class="customer-section-title">ready to redeem</div>
                         <div class="customer-reward-list">
                             {% for reward in lookup.available_rewards %}
                                 <div class="customer-reward-pill">
@@ -108,7 +142,7 @@
                     {% if lookup.next_reward %}
                         <div class="customer-progress-head">
                             <div>
-                                <div class="customer-section-title">Next reward</div>
+                                <div class="customer-section-title">next reward</div>
                                 <div class="customer-next-name">{{ lookup.next_reward.name }}</div>
                             </div>
                             <div class="customer-remaining">{{ lookup.remaining }} to go</div>
@@ -125,12 +159,12 @@
 
                 <form method="post" action="{{ url_for('customer_loyalty_logout') }}" class="customer-logout-form">
                     <input type="hidden" name="customer_loyalty_csrf" value="{{ customer_loyalty_csrf }}">
-                    <button type="submit" class="btn app-btn-secondary app-btn">Use another phone number</button>
+                    <button type="submit" class="btn app-btn-secondary app-btn">use another phone number</button>
                 </form>
             </div>
         {% else %}
             <form method="post" action="{{ url_for('customer_loyalty') }}" class="customer-lookup-form" data-loading-form data-loading-text="Finding your rewards">
-                <label class="form-label" for="phone">Phone number</label>
+                <label class="form-label" for="phone">phone number</label>
                 <div class="customer-phone-row">
                     <input
                         id="phone"
@@ -143,7 +177,7 @@
                         value="{{ phone_value }}"
                         required
                     >
-                    <button type="submit" class="btn app-btn-primary app-btn customer-submit">Continue</button>
+                    <button type="submit" class="btn app-btn-primary app-btn customer-submit">continue</button>
                 </div>
             </form>
 
@@ -153,11 +187,12 @@
 
             {% if not_found %}
                 <div class="customer-empty-state" role="status">
-                    <div class="customer-empty-title">No rewards account found</div>
+                    <div class="customer-empty-title">no rewards account found</div>
                     <p>We could not find a loyalty account for that phone number. Try the number you used in store, with or without the country code.</p>
                 </div>
             {% endif %}
         {% endif %}
+        </div>
     </section>
 </div>
 
