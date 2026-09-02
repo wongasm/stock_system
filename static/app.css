@@ -292,6 +292,7 @@ a:hover {
 }
 
 .customer-loyalty-page {
+    align-self: flex-start;
     width: min(100%, 760px);
     padding: 32px 0;
 }
