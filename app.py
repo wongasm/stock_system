@@ -566,6 +566,8 @@ def ensure_api_cache_schema():
         db.session.rollback()
 
 
+from sales_reporting import register_sales_reporting
+
 # Create tables
 with app.app_context():
     db.create_all()
@@ -4517,9 +4519,6 @@ def monthly_stocktake_report():
     )
 
 
-# Run the Flask app
-if __name__ == "__main__":
-    app.run(debug=True, port=8081)
 
 @app.route("/submit_weekly_stocktake", methods=["POST"])
 @login_required
@@ -4847,99 +4846,7 @@ def purchasing():
         total_spend=total_spend
     )
 
-@app.route("/sales_report", methods=["GET"])
-@login_required
-def sales_report():
-    try:
-        db.session.execute(text("SELECT 1"))
-    except OperationalError as e:
-        print("❌ DB connection lost. Reconnecting...")
-        db.session.remove()
-        db.session.execute(text("SELECT 1"))
-
-    if current_user.role != "admin":
-        flash("Access denied.", "danger")
-        return redirect(url_for("index"))
-
-    # 🔎 Date filters
-    start_date = request.args.get("start_date")
-    end_date = request.args.get("end_date")
-    store_filter = request.args.get("store_filter")
-
-    if not start_date or not end_date:
-        today = datetime.utcnow().date()
-        start_date = today.strftime("%Y-%m-%d")
-        end_date = today.strftime("%Y-%m-%d")
-
-    start_utc = datetime.strptime(start_date + " 00:00:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
-    end_utc = datetime.strptime(end_date + " 23:59:59", "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc).isoformat().replace('+00:00', 'Z')
-
-    stores = ["Doncaster", "Lonsdale", "Clayton", "Glen Waverley"]
-    selected_stores = [store_filter] if store_filter in stores else stores
-
-    all_sales = {}
-    total_revenue = 0
-    total_orders = 0
-    total_items_sold = 0
-    store_revenue = {}
-    category_sales = defaultdict(lambda: defaultdict(lambda: {"quantity": 0, "revenue": 0.0}))
-
-    for store_name in selected_stores:
-        store_orders = fetch_sales_for_store(store_name, start_date=start_utc, end_date=end_utc)
-
-        store_total = 0
-        for order in store_orders:
-            total_orders += 1
-            order_total = order.get('total_money', {}).get('amount', 0) / 100
-            total_revenue += order_total
-            store_total += order_total
-
-            for item in order.get("line_items", []):
-                item_name = item.get("name", "").strip()
-                if not item_name:
-                    continue
-                qty = int(item.get("quantity", 0))
-                line_revenue = get_square_line_item_revenue(item)
-                total_items_sold += qty
-                category = ITEM_CATEGORY_MAP.get(item_name, "Uncategorized")
-                category_sales[category][item_name]["quantity"] += qty
-                category_sales[category][item_name]["revenue"] += line_revenue
-
-        all_sales[store_name] = store_orders
-        store_revenue[store_name] = round(store_total, 2)
-
-    sorted_category_sales = {}
-    for cat, items in category_sales.items():
-        sorted_items = dict(
-            sorted(items.items(), key=lambda x: x[1]["quantity"], reverse=True)
-        )
-        category_revenue = sum(item["revenue"] for item in sorted_items.values())
-        category_quantity = sum(item["quantity"] for item in sorted_items.values())
-        sales_share = (category_revenue / total_revenue * 100) if total_revenue else 0
-
-        sorted_category_sales[cat] = {
-            "items": sorted_items,
-            "total_revenue": round(category_revenue, 2),
-            "total_quantity": category_quantity,
-            "sales_share": round(sales_share, 1),
-        }
-
-    average_order_value = total_revenue / total_orders if total_orders > 0 else 0
-
-    return render_template(
-        "sales_report.html",
-        all_sales=all_sales,
-        start_date=start_date,
-        end_date=end_date,
-        total_revenue=round(total_revenue, 2),
-        total_orders=total_orders,
-        total_items_sold=total_items_sold,
-        average_order_value=round(average_order_value, 2),
-        category_sales=sorted_category_sales,
-        store_revenue=store_revenue,
-        store_filter=store_filter,
-        stores=stores  # for dropdown options
-    )
+register_sales_reporting(app)
 
 @app.route("/admin/square_sync", methods=["GET", "POST"])
 @login_required
@@ -5235,3 +5142,8 @@ def cashflow():
 
     ingredients = Ingredient.query.order_by(Ingredient.name).all()
     return render_template("cashflow.html", total_unpaid=total_unpaid, ingredients=ingredients)
+
+
+# Run the Flask app
+if __name__ == "__main__":
+    app.run(debug=True, port=8081)

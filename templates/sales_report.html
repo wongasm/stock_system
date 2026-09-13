@@ -1,223 +1,46 @@
 {% extends "navbar.html" %}
 {% block content %}
-
-<div class="container-fluid p-0 mt-5 pt-4">
-
-    <!-- PAGE HEADER -->
-    <div class="d-flex justify-content-between align-items-center mb-4 px-3">
-        <h2 class="fw-bold app-title">Sales Dashboard</h2>
-    </div>
-
-    <!-- FILTER CARD -->
-    <div class="card app-card mx-3 mb-4 p-4">
-        <h5 class="fw-bold mb-3">Filter Sales</h5>
-
-        <form method="get" class="row g-3">
-
-            <div class="col-md-3 col-12">
-                <label class="form-label small-text fw-semibold">Start Date</label>
-                <input type="date" id="start_date" name="start_date"
-                       value="{{ request.args.get('start_date','') }}" class="form-control">
-            </div>
-
-            <div class="col-md-3 col-12">
-                <label class="form-label small-text fw-semibold">End Date</label>
-                <input type="date" id="end_date" name="end_date"
-                       value="{{ request.args.get('end_date','') }}" class="form-control">
-            </div>
-
-            <div class="col-md-3 col-12">
-                <label class="form-label small-text fw-semibold">Filter by Store</label>
-                <select id="store_filter" name="store_filter" class="form-select">
-                    <option value="">All Stores</option>
-                    {% for store in stores %}
-                    <option value="{{ store }}" {% if store_filter == store %}selected{% endif %}>
-                        {{ store }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="col-md-3 col-12">
-                <button type="submit" class="btn app-btn-primary w-100">Apply Filter</button>
-            </div>
-
-        </form>
-    </div>
-
-    <!-- SUMMARY CARDS -->
-    <div class="row mx-3 mb-4">
-
-        <div class="col-md-3 col-6 mb-3">
-            <div class="summary-card p-3 app-card">
-                <h6 class="small-text fw-semibold">Total Revenue</h6>
-                <div class="fs-3 fw-bold text-success">${{ total_revenue }}</div>
-                <div class="mt-2 small-text">
-                    {% for s, revenue in store_revenue.items() %}
-                        <div><b>{{ s }}:</b> ${{ '%.2f'|format(revenue) }}</div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-3 col-6 mb-3">
-            <div class="summary-card p-3 app-card">
-                <h6 class="small-text fw-semibold">Orders</h6>
-                <div class="fs-3 fw-bold">{{ total_orders }}</div>
-            </div>
-        </div>
-
-        <div class="col-md-3 col-6 mb-3">
-            <div class="summary-card p-3 app-card">
-                <h6 class="small-text fw-semibold">Items Sold</h6>
-                <div class="fs-3 fw-bold">{{ total_items_sold }}</div>
-            </div>
-        </div>
-
-        <div class="col-md-3 col-6 mb-3">
-            <div class="summary-card p-3 app-card">
-                <h6 class="small-text fw-semibold">Avg Order Value</h6>
-                <div class="fs-3 fw-bold">${{ average_order_value }}</div>
-            </div>
-        </div>
-
-    </div>
-
-    <!-- CATEGORY SALES -->
-    <div class="mx-3 mb-5">
-        <h4 class="fw-bold mb-3">Top-Selling Items by Category</h4>
-
-        {% if category_sales %}
-            {% for category, category_data in category_sales.items() %}
-
-            <div class="card app-card mb-4 p-3 sales-category-card" onclick="toggleCategory(this)">
-                <div class="d-flex justify-content-between align-items-start gap-3">
-                    <div>
-                        <h5 class="fw-bold mb-1">{{ category }}</h5>
-                        <div class="category-summary">
-                            <span class="category-metric">${{ '%.2f'|format(category_data.total_revenue) }} sold</span>
-                            <span class="category-metric">{{ '%.1f'|format(category_data.sales_share) }}% of total sales</span>
-                            <span class="category-metric">{{ category_data.total_quantity }} items</span>
-                        </div>
-                    </div>
-                    <span class="toggle-arrow">▼</span>
-                </div>
-
-                <div class="category-details mt-3" style="display:none;">
-                    <table class="table app-table table-hover">
-                        <thead class="app-thead">
-                            <tr>
-                                <th>Item</th>
-                                <th>Quantity Sold</th>
-                                <th>Total Revenue</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for item, item_data in category_data["items"].items() %}
-                            <tr>
-                                <td>{{ item }}</td>
-                                <td>{{ item_data.quantity }}</td>
-                                <td>${{ '%.2f'|format(item_data.revenue) }}</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-
-            </div>
-
-            {% endfor %}
-        {% else %}
-            <div class="alert alert-info">No sales found for this date range.</div>
-        {% endif %}
-    </div>
-
-</div>
-
-<!-- JS -->
-<script>
-function toggleCategory(card) {
-    let details = card.querySelector(".category-details");
-    let arrow = card.querySelector(".toggle-arrow");
-
-    if (details.style.display === "none") {
-        details.style.display = "block";
-        arrow.innerText = "▲";
-    } else {
-        details.style.display = "none";
-        arrow.innerText = "▼";
-    }
-}
-</script>
-
-<!-- CSS -->
 <style>
-.summary-card {
-    border-radius: 16px;
-}
-
-.sales-category-card {
-    cursor: pointer;
-    transition: .25s ease;
-}
-.sales-category-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 6px 20px rgba(0,0,0,0.07);
-}
-
-.toggle-arrow {
-    font-size: 1.2rem;
-    opacity: 0.5;
-}
-
-.category-summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.65rem;
-    color: #6B7280;
-    font-size: 0.92rem;
-}
-
-.category-metric {
-    background: #f5f7fb;
-    border: 1px solid rgba(17, 24, 39, 0.08);
-    border-radius: 999px;
-    padding: 0.25rem 0.7rem;
-    font-weight: 600;
-}
-
-.category-details {
-    animation: fadeIn .3s ease;
-}
-@keyframes fadeIn {
-    from { opacity:0; transform: translateY(-4px); }
-    to { opacity:1; transform: translateY(0); }
-}
-
-/* Use shared app styles */
-.app-card {
-    border-radius: 18px;
-    border: 1px solid rgba(0,0,0,0.05);
-    background: #ffffff;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.07);
-}
-
-.app-thead {
-    background: #111827 !important;
-    color: white !important;
-}
-
-.app-btn-primary {
-    background: linear-gradient(135deg,#6366F1,#4F46E5) !important;
-    border-radius: 12px !important;
-    color: #fff !important;
-    font-weight: 600 !important;
-}
-
-.small-text {
-    font-size: 0.85rem;
-    color: #6B7280;
-}
+.sales-report{padding:100px 24px 32px;max-width:1600px;margin:auto}.sales-report .app-card{background:white;border:1px solid #e5e7eb;border-radius:16px;padding:22px;margin-bottom:20px;box-shadow:0 3px 12px #11182708}.sales-report h2{font-weight:750}.sales-report .muted{color:#64748b;font-size:.9rem}.sales-report .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.sales-report .value{font-size:1.9rem;font-weight:750}.sales-report .table{font-size:.9rem}.sales-report summary{cursor:pointer}.sales-report canvas{width:100%;height:290px}.sales-report .positive{color:#13745c}.sales-report .negative{color:#b93838}.sales-report th{white-space:nowrap}.sales-report .sync-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.sales-report .chart-legend{display:flex;gap:18px;flex-wrap:wrap}.sales-report .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px}@media(max-width:750px){.sales-report{padding:90px 12px 20px}.sales-report .kpis,.sales-report .sync-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
-
+{% macro money(cents) %}${{ '{:,.2f}'.format(cents / 100) }}{% endmacro %}
+{% macro change(now, before) %}{% if before %}<span class="{{ 'positive' if now >= before else 'negative' }}">{{ '%+.1f'|format((now-before)/before*100) }}%</span>{% else %}—{% endif %}{% endmacro %}
+<div class="sales-report">
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3"><div><h2>Sales Report</h2><p class="muted">Saved Square sales · Melbourne dates · AUD</p></div><a href="https://docs.google.com/spreadsheets/d/1qCSRiaDr36iPNCTsA0H6yfcCa1hacpuhEDHCviIt3e4/edit" target="_blank" rel="noopener">Reference spreadsheet</a></div>
+<form method="get" class="app-card row g-3 mx-0">
+<div class="col-md-3"><label for="start" class="form-label">From</label><input id="start" name="start_date" type="date" class="form-control" value="{{ start_date }}" required></div>
+<div class="col-md-3"><label for="end" class="form-label">To</label><input id="end" name="end_date" type="date" class="form-control" value="{{ end_date }}" required></div>
+<div class="col-md-3"><label for="store" class="form-label">Store</label><select id="store" name="store_filter" class="form-select"><option value="">All stores</option>{% for s in stores %}<option {% if s==store_filter %}selected{% endif %}>{{ s }}</option>{% endfor %}</select></div><div class="col-md-3 d-flex align-items-end"><button class="btn btn-primary w-100">Load saved report</button></div>
+</form>
+<details class="app-card" open><summary class="fw-bold">Sync status and history</summary><p class="muted mt-2">Import history once. New syncs pick up new and changed orders. Reloading this page never contacts Square. Rebuild re-reads all available history while keeping saved results.</p>
+<div class="sync-grid mb-3">{% for s in stores %}{% set st=statuses.get(s) %}<div><strong>{{ s }}</strong><div class="muted">{% if st and st.last_success %}Last completed: {{ st.last_success }} UTC{% else %}History not yet imported{% endif %}</div>{% if st and st.window_end %}<div>Import in progress · {{ st.processed }} orders saved</div>{% endif %}{% if st and st.error %}<div class="text-danger">{{ st.error }}</div>{% endif %}</div>{% endfor %}</div>
+<button type="button" class="btn btn-primary" id="sync">Sync new / changed sales</button> <button type="button" class="btn btn-outline-secondary" id="rebuild">Rebuild all history</button><div id="sync-message" role="status" aria-live="polite" class="mt-2"></div>
+</details>
+{% for s in stores if not store_filter or store_filter == s %}{% if not statuses.get(s) or not statuses[s].last_success %}<div class="alert alert-warning">{{ s }} history is incomplete. Totals and comparisons may be partial until the initial import finishes.</div>{% endif %}{% endfor %}
+<div class="kpis">
+<div class="app-card"><div class="muted">Completed sales</div><div class="value">{{ money(sales) }}</div>{{ change(sales,previous_sales) }} <span class="muted">vs prior period</span></div>
+<div class="app-card"><div class="muted">Orders</div><div class="value">{{ order_count }}</div><div class="muted">Completed orders</div></div>
+<div class="app-card"><div class="muted">Average sale</div><div class="value">{{ money(average) }}</div><div class="muted">Sales ÷ orders</div></div>
+<div class="app-card"><div class="muted">Items sold</div><div class="value">{{ '%g'|format(item_count) }}</div><div class="muted">Before returns</div></div>
+</div>
+<p class="muted">Comparison: {{ comparison_start }} – {{ comparison_end }} (preceding equal-length period). Sales include tax and discounts, before refunds. Open and canceled orders are excluded. Refunds below belong to original order dates.</p>
+<div class="app-card"><div class="d-flex justify-content-between"><h5>Sales by store</h5><label>Group by <select id="grouping" class="form-select form-select-sm d-inline w-auto"><option value="day">Day</option><option value="week">Week (Monday)</option></select></label></div><canvas id="trend" role="img" aria-label="Daily sales by store; values available in daily breakdown table"></canvas><div class="chart-legend" id="legend"></div></div>
+<div class="app-card"><h5>Store comparison</h5><div class="table-responsive"><table class="table"><thead><tr><th>Store</th><th>Sales</th><th>Prior period</th><th>Change</th><th>Orders</th><th>Average sale</th><th>Completed refunds</th></tr></thead><tbody>{% for s,t in totals.items() %}<tr><td><a href="{{ url_for('sales_report',start_date=start_date,end_date=end_date,store_filter=s) }}">{{ s }}</a></td><td>{{ money(t.sales) }}</td><td>{{ money(t.previous) }}</td><td>{{ change(t.sales,t.previous) }}</td><td>{{ t.orders }}</td><td>{{ money(t.sales/t.orders if t.orders else 0) }}</td><td>{{ money(t.refunds) }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="app-card"><h5>Product mix</h5><p class="muted">Drinks, waffles and bingsu follow the reference report. Expand a category for products. Shares use completed sales as the denominator.</p>{% for cat, data in categories.items() %}<details class="border-bottom py-2"><summary><strong>{{ cat }}</strong> · {{ money(data.sales) }} · {{ '%.1f'|format(data.sales/sales*100 if sales else 0) }}% of sales</summary><div class="table-responsive"><table class="table"><thead><tr><th>Product</th><th>Quantity</th><th>Sales</th></tr></thead><tbody>{% for c,name,qty,amount in products if c==cat %}<tr><td>{{ name }}</td><td>{{ '%g'|format(qty) }}</td><td>{{ money(amount) }}</td></tr>{% endfor %}</tbody></table></div></details>{% else %}<p>No saved product sales in this range.</p>{% endfor %}</div>
+<details class="app-card"><summary class="fw-bold">Daily breakdown</summary><div class="table-responsive"><table class="table"><thead><tr><th>Date</th><th>Store</th><th>Sales</th><th>Orders</th><th>Average sale</th><th>Change vs prior period</th><th>Best-selling bingsu</th><th>Drinks</th><th>Drinks share</th><th>Waffles</th><th>Waffle share</th></tr></thead><tbody>{% for r in day_rows %}<tr><td>{{ r.date.strftime('%a %d %b %Y') }}</td><td>{{ r.store }}</td><td>{{ money(r.sales*100) }}</td><td>{{ r.orders }}</td><td>{{ money(r.average*100) }}</td><td>{{ change(r.sales,r.previous) }}</td><td>{{ r.best or '—' }} {% if r.best %}({{ '%g'|format(r.best_qty) }}){% endif %}</td><td>{{ money(r.drinks) }}</td><td>{{ '%.1f'|format(r.drinks/r.sales if r.sales else 0) }}%</td><td>{{ money(r.waffles) }}</td><td>{{ '%.1f'|format(r.waffles/r.sales if r.sales else 0) }}%</td></tr>{% else %}<tr><td colspan="5">No saved sales for these dates.</td></tr>{% endfor %}</tbody></table></div></details>
+<div class="app-card"><h5>Transactions</h5><p class="muted">{{ transactions.total }} saved orders · expand an order for detail</p>{% for o in transactions.items %}<details class="border-bottom py-2"><summary>{{ o.business_date }} · {{ o.store }} · {{ money(o.total) }} · {{ o.state }} <span class="muted">{{ o.order_id }}</span></summary><p class="muted mt-2">Created {{ o.payload.created_at }} · Updated {{ o.payload.updated_at }}</p><div class="table-responsive"><table class="table"><thead><tr><th>Item</th><th>Variation</th><th>Quantity</th><th>Sales</th></tr></thead><tbody>{% for l in o.payload.get('line_items',[]) %}<tr><td>{{ l.get('name','Unnamed item') }}</td><td>{{ l.get('variation_name','') }}</td><td>{{ l.get('quantity',0) }}</td><td>{{ money(l.get('total_money',{}).get('amount',0)) }}</td></tr>{% endfor %}</tbody></table></div></details>{% else %}<p>No saved orders. Import history using the sync button above.</p>{% endfor %}<nav class="mt-3" aria-label="Transaction pages">{% if transactions.has_prev %}<a class="btn btn-outline-secondary" href="{{ url_for('sales_report',start_date=start_date,end_date=end_date,store_filter=store_filter,page=transactions.prev_num) }}">Previous</a>{% endif %} Page {{ transactions.page }} of {{ transactions.pages or 1 }} {% if transactions.has_next %}<a class="btn btn-outline-secondary" href="{{ url_for('sales_report',start_date=start_date,end_date=end_date,store_filter=store_filter,page=transactions.next_num) }}">Next</a>{% endif %}</nav></div>
+</div>
+<script>
+(()=>{
+const source={{ chart|tojson }};let data=source;const colors=['#6366f1','#059669','#ea580c','#0284c7'];
+const canvas=document.getElementById('trend'), legend=document.getElementById('legend');
+Object.keys(data.series).forEach((s,i)=>{const el=document.createElement('span');const dot=document.createElement('i');dot.className='dot';dot.style.background=colors[i];el.append(dot,document.createTextNode(s));legend.append(el)});
+function draw(){const w=canvas.clientWidth,h=290,dpr=window.devicePixelRatio||1;canvas.width=w*dpr;canvas.height=h*dpr;const c=canvas.getContext('2d');c.scale(dpr,dpr);const left=65,right=w-15,top=20,bottom=h-35;const max=Math.max(1,...Object.values(data.series).flat());c.font='12px sans-serif';for(let i=0;i<=4;i++){const y=bottom-(bottom-top)*i/4;c.strokeStyle='#e2e8f0';c.beginPath();c.moveTo(left,y);c.lineTo(right,y);c.stroke();c.fillStyle='#64748b';c.fillText('$'+Math.round(max*i/4).toLocaleString(),0,y+4)};Object.values(data.series).forEach((values,j)=>{c.strokeStyle=colors[j];c.lineWidth=2;c.beginPath();values.forEach((v,i)=>{const x=left+(right-left)*i/Math.max(1,values.length-1),y=bottom-(bottom-top)*v/max;i?c.lineTo(x,y):c.moveTo(x,y)});c.stroke();if(values.length===1){c.fillStyle=colors[j];c.beginPath();c.arc(left,bottom-(bottom-top)*values[0]/max,4,0,Math.PI*2);c.fill()}});c.fillStyle='#64748b';c.fillText(data.labels[0]||'',left,h-8);if(data.labels.length>1)c.fillText(data.labels.at(-1),Math.max(left,right-80),h-8)}
+document.getElementById('grouping').onchange=e=>{if(e.target.value==='day'){data=source}else{const weeks={};source.labels.forEach((label,i)=>{const d=new Date(label+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-(d.getUTCDay()+6)%7);const key=d.toISOString().slice(0,10);if(!weeks[key])weeks[key]=Object.fromEntries(Object.keys(source.series).map(s=>[s,0]));Object.keys(source.series).forEach(s=>weeks[key][s]+=source.series[s][i])});data={labels:Object.keys(weeks),series:Object.fromEntries(Object.keys(source.series).map(s=>[s,Object.values(weeks).map(w=>w[s])]))}}draw()};
+new ResizeObserver(draw).observe(canvas);draw();
+const buttons=[document.getElementById('sync'),document.getElementById('rebuild')],msg=document.getElementById('sync-message');
+async function sync(rebuild){if(rebuild&&!confirm('Re-read all Square history? Existing saved data remains available during the rebuild.'))return;buttons.forEach(b=>b.disabled=true);let failures=[];try{for(const store of {{ stores|tojson }}){let first=true,more=true;while(more){msg.textContent='Syncing '+store+'… You can leave this page; saved batches resume next time.';const r=await fetch({{ url_for('sales_report_sync')|tojson }},{method:'POST',headers:{'Content-Type':'application/json','X-Sales-CSRF':{{ csrf|tojson }}},body:JSON.stringify({store,rebuild:rebuild&&first})});const p=await r.json();if(!r.ok||p.error){failures.push(store+': '+(p.error||'Sync failed'));break}if(p.busy){failures.push(store+': another sync is running');break}first=false;more=p.more;msg.textContent=store+': '+p.processed+' orders processed';}}msg.textContent=failures.length?failures.join(' · '):'Sync complete. Reload the saved report to see updated totals.';const link=document.createElement('a');link.href=window.location.href;link.textContent=' Reload report';msg.append(link)}catch(e){msg.textContent='Connection interrupted. Retry sync to resume saved progress.'}finally{buttons.forEach(b=>b.disabled=false)}}
+buttons[0].onclick=()=>sync(false);buttons[1].onclick=()=>sync(true);
+})();
+</script>
 {% endblock %}

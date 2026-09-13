@@ -17,10 +17,20 @@ import sys
 import time
 
 from app import app, warm_caches
+from sales_reporting import STORES, sync_step
 
 
 def run_once():
     with app.app_context():
+        # Bounded batches resume automatically on the next scheduled invocation.
+        for store in STORES:
+            try:
+                for _ in range(10):
+                    progress = sync_step(store)
+                    if progress.get('busy') or not progress.get('more'):
+                        break
+            except ValueError as exc:
+                print(f"Sales sync {store}: {exc}")
         status = warm_caches()
         print("✅ Cache warmed:", status)
     return status
