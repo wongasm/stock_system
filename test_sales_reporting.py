@@ -256,3 +256,46 @@ def test_page_explains_open_inclusion(app, order):
     assert b'OPEN: 1 orders' in response.data
     assert b'(excluded from sales)' not in response.data
     assert b'Open and completed orders are included' in response.data
+
+
+def test_week_archive_lazy_details_and_boundaries(app, order, monkeypatch):
+    import sales_reporting as sr
+    for oid, created, state, store in [
+        ('sunday','2026-09-06T13:59:59Z','OPEN','Doncaster'),
+        ('monday','2026-09-06T14:00:00Z','COMPLETED','Doncaster'),
+        ('draft','2026-09-06T14:00:00Z','DRAFT','Doncaster'),
+        ('other','2026-09-06T14:00:00Z','OPEN','Lonsdale')]:
+        item=deepcopy(order);item.update(id=oid,created_at=created,state=state)
+        save_order(store,'loc',item)
+    db.session.commit()
+    weeks=sr.saved_weeks(['Doncaster'])
+    assert [w['start'] for w in weeks]==[date(2026,9,7),date(2026,8,31)]
+    assert [w['sales'] for w in weeks]==[2500,2500]
+    c=app.test_client()
+    assert c.get('/sales_report/week?week=2026-09-07').status_code==401
+    with c.session_transaction() as s:s['_user_id']='2'
+    g.pop('_login_user',None)
+    assert c.get('/sales_report/week?week=2026-09-07').status_code==403
+    with c.session_transaction() as s:s['_user_id']='1'
+    g.pop('_login_user',None)
+    for query in ['week=bad','week=2026-09-08','week=2026-09-07&store_filter=bad','week=9999-12-27']:
+        assert c.get('/sales_report/week?'+query).status_code==400
+    monkeypatch.setattr(sr.requests,'post',lambda *a,**kw:pytest.fail('Saved reports must not fetch Square'))
+    response=c.get('/sales_report/week?week=2026-09-07&store_filter=Doncaster')
+    assert response.status_code==200
+    assert b'Mon 07 Sep' in response.data and b'Sun 13 Sep' in response.data
+    assert b'Mango' in response.data and b'$25.00' in response.data
+    assert b'Lonsdale' not in response.data
+    assert b'No saved orders' in response.data
+    assert response.headers['Cache-Control']=='no-store'
+    calls=[]
+    real=sr.report_data
+    def track(start,end,stores):
+        calls.append((start,end));return real(start,end,stores)
+    monkeypatch.setattr(sr,'report_data',track)
+    response=c.get('/sales_report?start_date=2026-09-07&end_date=2026-09-07&store_filter=Doncaster')
+    assert response.status_code==200
+    assert b'Transactions' not in response.data and b'Transaction pages' not in response.data
+    assert b'31 Aug 2026' in response.data  # Archive includes history outside top date filter.
+    assert b'Weekly product breakdown' not in response.data  # Details only fetched on expansion.
+    assert len(calls)==1

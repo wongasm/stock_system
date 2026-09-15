@@ -283,6 +283,20 @@ def saved_coverage(start, end, stores):
     return coverage
 
 
+def saved_weeks(stores):
+    weeks = {}
+    rows = db.session.query(ReportOrder.business_date, func.sum(ReportOrder.total), func.count()).filter(
+        ReportOrder.store.in_(stores), ReportOrder.state.in_(SALES_STATES)
+        ).group_by(ReportOrder.business_date)
+    for day, sales, count in rows:
+        monday = day - timedelta(days=day.weekday())
+        week = weeks.setdefault(monday, {'start': monday, 'end': monday + timedelta(days=6),
+            'sales': 0, 'orders': 0})
+        week['sales'] += sales
+        week['orders'] += count
+    return [weeks[key] for key in sorted(weeks, reverse=True)]
+
+
 def register_sales_reporting(app):
     def admin():
         if current_user.role != 'admin':
@@ -297,7 +311,6 @@ def register_sales_reporting(app):
             end = date.fromisoformat(request.args.get('end_date') or today.isoformat())
             if end < start or (end-start).days > 730:
                 raise ValueError()
-            page_num = max(1, int(request.args.get('page', 1)))
         except ValueError:
             abort(400, 'Choose valid dates in order, spanning no more than two years.')
         store = request.args.get('store_filter', '')
@@ -306,17 +319,44 @@ def register_sales_reporting(app):
         selected = [store] if store else list(STORES)
         session.setdefault('sales_csrf', secrets.token_hex(32))
         data = report_data(start, end, selected)
-        transactions = ReportOrder.query.filter(ReportOrder.store.in_(selected),
-            ReportOrder.business_date.between(start,end)).order_by(
-            ReportOrder.business_date.desc(),ReportOrder.store,ReportOrder.order_id).paginate(page=page_num,per_page=50,error_out=False)
         statuses = {r.store: r for r in ReportSync.query.all()}
         return render_template('sales_report.html', **data, start_date=start.isoformat(), end_date=end.isoformat(),
-            store_filter=store, stores=STORES, statuses=statuses, transactions=transactions,
+            store_filter=store, stores=STORES, statuses=statuses, weeks=saved_weeks(selected),
             csrf=session['sales_csrf'], coverage=saved_coverage(start, end, list(STORES)),
             sales_states=SALES_STATES)
 
     # Preserve the existing endpoint and all navigation links.
     app.add_url_rule('/sales_report', endpoint='sales_report', view_func=page, methods=['GET'])
+
+    @app.route('/sales_report/week', methods=['GET'])
+    @login_required
+    def sales_report_week():
+        admin()
+        try:
+            start = date.fromisoformat(request.args.get('week', ''))
+            end = start + timedelta(days=6)
+            if start.weekday() != 0:
+                raise ValueError()
+            start - timedelta(days=7)
+        except (ValueError, OverflowError):
+            abort(400, 'Choose a valid Monday for the week.')
+        store = request.args.get('store_filter', '')
+        if store and store not in STORES:
+            abort(400, 'Unknown store.')
+        selected = [store] if store else list(STORES)
+        reports = []
+        for name in selected:
+            data = report_data(start, end, [name])
+            by_day = {r['date']: r for r in data['day_rows']}
+            data['day_rows'] = [by_day.get(start + timedelta(days=i), {
+                'date': start + timedelta(days=i), 'sales': 0, 'orders': 0,
+                'average': 0, 'previous': 0,
+                'best': '', 'best_qty': 0, 'drinks': 0, 'waffles': 0
+            }) for i in range(7)]
+            reports.append((name, data))
+        statuses = {r.store: r for r in ReportSync.query.filter(ReportSync.store.in_(selected)).all()}
+        return render_template('sales_report_week.html', reports=reports, start=start, end=end,
+            statuses=statuses), 200, {'Cache-Control': 'no-store'}
 
     @app.route('/sales_report/sync', methods=['POST'])
     @login_required

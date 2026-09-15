@@ -41,7 +41,7 @@ Rebuild re-reads all history and replaces matching records while retaining saved
 - Refunds are completed refunds embedded in the saved order and attributed to the original order date. This is not a refund-event ledger. Product quantities/revenue are before returns.
 - AUD only; another currency causes a visible batch failure instead of silently adding currencies.
 - Categories reuse `ITEM_CATEGORY_MAP`, with explicit waffle names/variation labels from the workbook. Ambiguous names such as Biscoff retain their existing mapping unless the variation identifies a waffle. Product catalog mapping should be reconciled against live Square before relying on exact category shares.
-- Database aggregates produce KPIs, comparisons and product mix; transaction detail is paginated at 50 records. Date ranges are limited to two years per view, with all imported history retained.
+- Database aggregates produce KPIs, comparisons and product mix; individual transaction detail has been replaced by an expandable weekly archive. Date ranges are limited to two years per view, with all imported history retained.
 - First-import warnings distinguish incomplete history from a genuine zero. Saved results remain available during source outages.
 
 ## Validation
@@ -59,3 +59,9 @@ The page now shows saved order counts and date bounds, selected-period amounts b
 ## OPEN orders included
 
 At the owner's request, OPEN and COMPLETED orders now contribute to sales, order counts, averages, comparisons, charts and product detail. DRAFT and CANCELED orders do not. Refund status filtering remains COMPLETED. Existing saved OPEN orders are included immediately; missing product projections from older imports are read from their saved line-item payloads. A later sync projects those lines normally, with no duplicate contribution. No Square rebuild is required for already-saved orders. Regression coverage includes legacy payload detail, prior-period OPEN sales, state transitions, exclusions and rendered labels; all thirteen tests pass.
+
+## Weekly archive
+
+The transaction list and its pagination query have been removed. All weeks with saved OPEN/COMPLETED sales appear newest first, independently of the top date range and scoped to the selected store. Week boundaries are Monday–Sunday using saved Melbourne business dates. Each expansion requests one authenticated administrator-only week endpoint, showing seven daily rows per store, prior-week comparisons, totals, averages, bingsu best sellers, drinks/waffle revenue and shares, and product totals. Missing days are marked as having no saved orders. Existing sync warnings remain.
+
+Week details load on first expansion and are reused until the page reloads; failed requests offer Retry. Both the list and details read saved data without contacting Square. No records are deleted. Fourteen tests pass, including week boundaries, filtering, authorization, input validation and lazy loading. Browser checks with sample data verified expansion and product detail.

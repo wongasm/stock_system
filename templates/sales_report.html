@@ -30,10 +30,30 @@
 <div class="app-card"><h5>Store comparison</h5><div class="table-responsive"><table class="table"><thead><tr><th>Store</th><th>Sales</th><th>Prior period</th><th>Change</th><th>Orders</th><th>Average sale</th><th>Completed refunds</th></tr></thead><tbody>{% for s,t in totals.items() %}<tr><td><a href="{{ url_for('sales_report',start_date=start_date,end_date=end_date,store_filter=s) }}">{{ s }}</a></td><td>{{ money(t.sales) }}</td><td>{{ money(t.previous) }}</td><td>{{ change(t.sales,t.previous) }}</td><td>{{ t.orders }}</td><td>{{ money(t.sales/t.orders if t.orders else 0) }}</td><td>{{ money(t.refunds) }}</td></tr>{% endfor %}</tbody></table></div></div>
 <div class="app-card"><h5>Product mix</h5><p class="muted">Drinks, waffles and bingsu follow the reference report. Expand a category for products. Shares use open and completed sales as the denominator.</p>{% for cat, data in categories.items() %}<details class="border-bottom py-2"><summary><strong>{{ cat }}</strong> · {{ money(data.sales) }} · {{ '%.1f'|format(data.sales/sales*100 if sales else 0) }}% of sales</summary><div class="table-responsive"><table class="table"><thead><tr><th>Product</th><th>Quantity</th><th>Sales</th></tr></thead><tbody>{% for c,name,qty,amount in products if c==cat %}<tr><td>{{ name }}</td><td>{{ '%g'|format(qty) }}</td><td>{{ money(amount) }}</td></tr>{% endfor %}</tbody></table></div></details>{% else %}<p>No saved product sales in this range.</p>{% endfor %}</div>
 <details class="app-card"><summary class="fw-bold">Daily breakdown</summary><div class="table-responsive"><table class="table"><thead><tr><th>Date</th><th>Store</th><th>Sales</th><th>Orders</th><th>Average sale</th><th>Change vs prior period</th><th>Best-selling bingsu</th><th>Drinks</th><th>Drinks share</th><th>Waffles</th><th>Waffle share</th></tr></thead><tbody>{% for r in day_rows %}<tr><td>{{ r.date.strftime('%a %d %b %Y') }}</td><td>{{ r.store }}</td><td>{{ money(r.sales*100) }}</td><td>{{ r.orders }}</td><td>{{ money(r.average*100) }}</td><td>{{ change(r.sales,r.previous) }}</td><td>{{ r.best or '—' }} {% if r.best %}({{ '%g'|format(r.best_qty) }}){% endif %}</td><td>{{ money(r.drinks) }}</td><td>{{ '%.1f'|format(r.drinks/r.sales if r.sales else 0) }}%</td><td>{{ money(r.waffles) }}</td><td>{{ '%.1f'|format(r.waffles/r.sales if r.sales else 0) }}%</td></tr>{% else %}<tr><td colspan="5">No saved sales for these dates.</td></tr>{% endfor %}</tbody></table></div></details>
-<div class="app-card"><h5>Transactions</h5><p class="muted">{{ transactions.total }} saved orders · expand an order for detail</p>{% for o in transactions.items %}<details class="border-bottom py-2"><summary>{{ o.business_date }} · {{ o.store }} · {{ money(o.total) }} · {{ o.state }} <span class="muted">{{ o.order_id }}</span></summary><p class="muted mt-2">Created {{ o.payload.created_at }} · Updated {{ o.payload.updated_at }}</p><div class="table-responsive"><table class="table"><thead><tr><th>Item</th><th>Variation</th><th>Quantity</th><th>Sales</th></tr></thead><tbody>{% for l in o.payload.get('line_items',[]) %}<tr><td>{{ l.get('name','Unnamed item') }}</td><td>{{ l.get('variation_name','') }}</td><td>{{ l.get('quantity',0) }}</td><td>{{ money(l.get('total_money',{}).get('amount',0)) }}</td></tr>{% endfor %}</tbody></table></div></details>{% else %}<p>No saved orders. Import history using the sync button above.</p>{% endfor %}<nav class="mt-3" aria-label="Transaction pages">{% if transactions.has_prev %}<a class="btn btn-outline-secondary" href="{{ url_for('sales_report',start_date=start_date,end_date=end_date,store_filter=store_filter,page=transactions.prev_num) }}">Previous</a>{% endif %} Page {{ transactions.page }} of {{ transactions.pages or 1 }} {% if transactions.has_next %}<a class="btn btn-outline-secondary" href="{{ url_for('sales_report',start_date=start_date,end_date=end_date,store_filter=store_filter,page=transactions.next_num) }}">Next</a>{% endif %}</nav></div>
+<section class="app-card"><h5>Weekly breakdown · all saved history</h5>
+<p class="muted">Monday–Sunday weeks, newest first. Uses the selected store and all saved dates, independently of the date filter above. Expand a week to load its daily store results and products.</p>
+{% for w in weeks %}<details class="saved-week border-bottom py-3" data-url="{{ url_for('sales_report_week',week=w.start.isoformat(),store_filter=store_filter) }}"><summary><strong>{{ w.start.strftime('%d %b %Y') }} – {{ w.end.strftime('%d %b %Y') }}</strong> · {{ money(w.sales) }} · {{ w.orders }} orders</summary><div class="week-body mt-3" aria-live="polite"></div></details>{% else %}<p>No saved sales weeks yet. Sync history to populate this list.</p>{% endfor %}
+</section>
 </div>
 <script>
 (()=>{
+document.querySelectorAll('.saved-week').forEach(week=>{
+  let loading=false, loaded=false;
+  const body=week.querySelector('.week-body');
+  async function loadWeek(){
+    if(loading || loaded || !week.open)return;
+    loading=true;body.setAttribute('aria-busy','true');body.textContent='Loading saved week…';
+    try{
+      const response=await fetch(week.dataset.url,{cache:'no-store'});
+      if(!response.ok || response.redirected)throw new Error('Unable to load week');
+      body.innerHTML=await response.text();loaded=true;
+    }catch(error){
+      body.textContent='Could not load this week. Please retry, or sign in again if your session expired. ';
+      const retry=document.createElement('button');retry.type='button';retry.className='btn btn-outline-secondary btn-sm';retry.textContent='Retry';retry.onclick=loadWeek;body.append(retry);
+    }finally{loading=false;body.removeAttribute('aria-busy')}
+  }
+  week.addEventListener('toggle',loadWeek);
+});
 const source={{ chart|tojson }};let data=source;const colors=['#6366f1','#059669','#ea580c','#0284c7'];
 const canvas=document.getElementById('trend'), legend=document.getElementById('legend');
 Object.keys(data.series).forEach((s,i)=>{const el=document.createElement('span');const dot=document.createElement('i');dot.className='dot';dot.style.background=colors[i];el.append(dot,document.createTextNode(s));legend.append(el)});

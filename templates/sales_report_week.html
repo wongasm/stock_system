@@ -1,0 +1,17 @@
+{% macro money(cents) %}${{ '{:,.2f}'.format(cents / 100) }}{% endmacro %}
+{% macro change(now, before) %}{% if before %}<span class="{{ 'positive' if now >= before else 'negative' }}">{{ '%+.1f'|format((now-before)/before*100) }}%</span>{% else %}—{% endif %}{% endmacro %}
+<p class="muted">{{ start }} – {{ end }} · Compared with the previous Monday–Sunday week. OPEN and COMPLETED sales, before refunds. Days without saved orders are marked below.</p>
+{% for store, data in reports %}
+{% set st=statuses.get(store) %}
+<section class="mb-4">
+<h6 class="fw-bold">{{ store }}</h6>
+{% if not st or not st.last_success or st.window_end or st.error %}<p class="text-warning">Saved totals may be partial: this store has an incomplete or unsuccessful sync.</p>{% elif st.watermark and end.isoformat() >= st.watermark.strftime('%Y-%m-%d') %}<p class="text-warning">This week extends beyond the last sync ({{ st.watermark }} UTC). Later sales may be missing.</p>{% endif %}
+<p><strong>{{ money(data.sales) }}</strong> · {{ data.order_count }} orders · Average {{ money(data.average) }} · {{ change(data.sales,data.previous_sales) }} vs previous week</p>
+<div class="table-responsive"><table class="table table-sm align-middle">
+<thead><tr><th>Day</th><th>Sales</th><th>Previous week</th><th>Change</th><th>Orders</th><th>Average sale</th><th>Best-selling bingsu</th><th>Drinks</th><th>Drinks share</th><th>Waffles</th><th>Waffle share</th></tr></thead>
+<tbody>{% for r in data.day_rows %}<tr><td class="text-nowrap">{{ r.date.strftime('%a %d %b') }}{% if not r.orders %}<br><span class="muted">No saved orders</span>{% endif %}</td><td>{{ money(r.sales*100) }}</td><td>{% if r.orders %}{{ money(r.previous*100) }}{% else %}—{% endif %}</td><td>{% if r.orders %}{{ change(r.sales,r.previous) }}{% else %}—{% endif %}</td><td>{{ r.orders }}</td><td>{{ money(r.average*100) }}</td><td>{{ r.best or '—' }}{% if r.best %} ({{ '%g'|format(r.best_qty) }}){% endif %}</td><td>{{ money(r.drinks) }}</td><td>{{ '%.1f'|format(r.drinks/r.sales if r.sales else 0) }}%</td><td>{{ money(r.waffles) }}</td><td>{{ '%.1f'|format(r.waffles/r.sales if r.sales else 0) }}%</td></tr>{% endfor %}</tbody>
+<tfoot><tr class="fw-bold"><td>Week total</td><td>{{ money(data.sales) }}</td><td>{{ money(data.previous_sales) }}</td><td>{{ change(data.sales,data.previous_sales) }}</td><td>{{ data.order_count }}</td><td>{{ money(data.average) }}</td><td>—</td>{% for category in ['Drinks','Waffles'] %}{% set amount=data.categories.get(category,{}).get('sales',0) %}<td>{{ money(amount) }}</td><td>{{ '%.1f'|format(amount/data.sales*100 if data.sales else 0) }}%</td>{% endfor %}</tr></tfoot>
+</table></div>
+<details><summary>Weekly product breakdown · {{ '%g'|format(data.item_count) }} items</summary><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Category</th><th>Product</th><th>Quantity</th><th>Sales</th><th>Sales share</th></tr></thead><tbody>{% for category,name,qty,amount in data.products %}<tr><td>{{ category }}</td><td>{{ name }}</td><td>{{ '%g'|format(qty) }}</td><td>{{ money(amount) }}</td><td>{{ '%.1f'|format(amount/data.sales*100 if data.sales else 0) }}%</td></tr>{% else %}<tr><td colspan="5">No saved product sales this week.</td></tr>{% endfor %}</tbody></table></div></details>
+</section>
+{% endfor %}
