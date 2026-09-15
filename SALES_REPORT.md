@@ -37,7 +37,7 @@ Rebuild re-reads all history and replaces matching records while retaining saved
 ## Metric definitions and limits
 
 - Default date range: current Monday through today in Australia/Melbourne; inclusive dates and DST-aware conversion. Comparisons use the preceding equal-length period. Day and Monday-week charts are available. Partial boundary weeks contain only selected dates.
-- Completed order totals only, including Square's tax/discount calculation, before refunds. This intentionally corrects the old report's inclusion of unpaid OPEN orders. It is not a payment settlement or accounting net-sales report.
+- OPEN and COMPLETED order totals, including Square's tax/discount calculation, before refunds. DRAFT and CANCELED orders are excluded, matching the owner's reporting rule. It is not a payment settlement or accounting net-sales report.
 - Refunds are completed refunds embedded in the saved order and attributed to the original order date. This is not a refund-event ledger. Product quantities/revenue are before returns.
 - AUD only; another currency causes a visible batch failure instead of silently adding currencies.
 - Categories reuse `ITEM_CATEGORY_MAP`, with explicit waffle names/variation labels from the workbook. Ambiguous names such as Biscoff retain their existing mapping unless the variation identifies a waffle. Product catalog mapping should be reconciled against live Square before relying on exact category shares.
@@ -55,3 +55,7 @@ The page was rendered with synthetic data in the real navbar/shared CSS, and wee
 Sync window end timestamps now use whole seconds before the first Square request. Default MySQL DATETIME columns discard fractional seconds; previously the next page could use a different end timestamp from the first page, violating Square's requirement to keep cursor queries identical. An already rejected cursor may require Rebuild all history after deployment; saved orders remain in place. This code-level defect has been reproduced by simulating MySQL timestamp precision. It has not yet been confirmed as the cause of the reported production totals.
 
 The page now shows saved order counts and date bounds, selected-period amounts by order status, and warnings for unfinished, failed or out-of-date syncs. Date bounds are explicitly not evidence of complete coverage. Added regression tests verify cursor-bound stability and date/store totals across more than 100 orders (independent of transaction pagination). Eleven tests pass.
+
+## OPEN orders included
+
+At the owner's request, OPEN and COMPLETED orders now contribute to sales, order counts, averages, comparisons, charts and product detail. DRAFT and CANCELED orders do not. Refund status filtering remains COMPLETED. Existing saved OPEN orders are included immediately; missing product projections from older imports are read from their saved line-item payloads. A later sync projects those lines normally, with no duplicate contribution. No Square rebuild is required for already-saved orders. Regression coverage includes legacy payload detail, prior-period OPEN sales, state transitions, exclusions and rendered labels; all thirteen tests pass.

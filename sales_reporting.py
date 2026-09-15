@@ -13,6 +13,7 @@ from models import db
 from square_helpers import ITEM_CATEGORY_MAP
 
 STORES = ('Doncaster', 'Lonsdale', 'Clayton', 'Glen Waverley')
+SALES_STATES = ('OPEN', 'COMPLETED')
 TZ = ZoneInfo('Australia/Melbourne')
 EPOCH = datetime(1970, 1, 1)
 
@@ -117,7 +118,7 @@ def save_order(store, location, order):
     row.payload = {k: order[k] for k in ('id', 'created_at', 'updated_at', 'state',
         'line_items', 'total_money', 'total_tax_money', 'total_discount_money', 'total_tip_money') if k in order}
     ReportLine.query.filter_by(store=store, order_id=row.order_id).delete()
-    if row.state == 'COMPLETED':
+    if row.state in SALES_STATES:
         for n, line in enumerate(order.get('line_items', [])):
             name = line.get('name', 'Unnamed item').strip() or 'Unnamed item'
             db.session.add(ReportLine(store=store, order_id=row.order_id,
@@ -194,7 +195,7 @@ def report_data(start, end, stores):
     days = (end-start).days + 1
     previous = start - timedelta(days=days)
     orders = ReportOrder.query.filter(ReportOrder.store.in_(stores),
-        ReportOrder.state == 'COMPLETED', ReportOrder.business_date.between(previous, end))
+        ReportOrder.state.in_(SALES_STATES), ReportOrder.business_date.between(previous, end))
     daily = orders.with_entities(ReportOrder.business_date, ReportOrder.store,
         func.sum(ReportOrder.total), func.count(), func.sum(ReportOrder.refunded)).group_by(
         ReportOrder.business_date, ReportOrder.store).all()
@@ -212,12 +213,38 @@ def report_data(start, end, stores):
             series[s][(d-start).days] = amount / 100
             day_rows.append({'date': d, 'store': s, 'sales': amount/100, 'orders': count, 'average': amount/count/100, 'previous': day_values.get((d-timedelta(days=days),s),0)/100})
     lines = ReportLine.query.filter(ReportLine.store.in_(stores), ReportLine.business_date.between(start, end))
-    products = lines.with_entities(ReportLine.category, ReportLine.name,
-        func.sum(ReportLine.quantity), func.sum(ReportLine.total)).group_by(
-        ReportLine.category, ReportLine.name).order_by(func.sum(ReportLine.total).desc()).all()
     daily_products = lines.with_entities(ReportLine.business_date, ReportLine.store,
         ReportLine.category, ReportLine.name, func.sum(ReportLine.quantity), func.sum(ReportLine.total)).group_by(
         ReportLine.business_date, ReportLine.store, ReportLine.category, ReportLine.name).all()
+    # Earlier imports saved OPEN order payloads but did not project their lines.
+    # Include those saved details immediately without a new Square history import.
+    has_lines = db.session.query(ReportLine.order_id).filter(
+        ReportLine.store == ReportOrder.store, ReportLine.order_id == ReportOrder.order_id).exists()
+    legacy_open = db.session.query(ReportOrder.business_date, ReportOrder.store, ReportOrder.payload).filter(
+        ReportOrder.store.in_(stores), ReportOrder.state == 'OPEN',
+        ReportOrder.business_date.between(start, end), ~has_lines)
+    legacy_daily = {}
+    for day, store, payload in legacy_open.yield_per(500):
+        for line in payload.get('line_items', []):
+            name = line.get('name', 'Unnamed item').strip() or 'Unnamed item'
+            key = (day, store, category_for(name, line.get('variation_name', '')), name)
+            qty, amount = legacy_daily.get(key, (Decimal(0), 0))
+            legacy_daily[key] = (qty + Decimal(line.get('quantity', '0')),
+                amount + int(line.get('total_money', {}).get('amount', 0)))
+    daily_products = list(daily_products) + [(*key, qty, amount)
+        for key, (qty, amount) in legacy_daily.items()]
+    # Merge legacy and projected lines before choosing daily best sellers.
+    merged_daily = {}
+    product_totals = {}
+    for day, store, cat, name, qty, amount in daily_products:
+        key = (day, store, cat, name)
+        q, a = merged_daily.get(key, (Decimal(0), 0))
+        merged_daily[key] = (q + qty, a + amount)
+        q, a = product_totals.get((cat, name), (Decimal(0), 0))
+        product_totals[(cat, name)] = (q + qty, a + amount)
+    daily_products = [(*key, qty, amount) for key, (qty, amount) in merged_daily.items()]
+    products = sorted([(cat, name, qty, amount) for (cat, name), (qty, amount)
+        in product_totals.items()], key=lambda p: (-p[3], p[0], p[1]))
     mixes = {}
     for d, store, cat, name, qty, amount in daily_products:
         mix = mixes.setdefault((d,store), {'drinks': 0, 'waffles': 0, 'best': '', 'best_qty': 0})
@@ -285,7 +312,8 @@ def register_sales_reporting(app):
         statuses = {r.store: r for r in ReportSync.query.all()}
         return render_template('sales_report.html', **data, start_date=start.isoformat(), end_date=end.isoformat(),
             store_filter=store, stores=STORES, statuses=statuses, transactions=transactions,
-            csrf=session['sales_csrf'], coverage=saved_coverage(start, end, list(STORES)))
+            csrf=session['sales_csrf'], coverage=saved_coverage(start, end, list(STORES)),
+            sales_states=SALES_STATES)
 
     # Preserve the existing endpoint and all navigation links.
     app.add_url_rule('/sales_report', endpoint='sales_report', view_func=page, methods=['GET'])

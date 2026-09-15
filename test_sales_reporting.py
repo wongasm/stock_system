@@ -196,12 +196,63 @@ def test_store_totals_include_all_pages_and_obey_dates(app, order):
     db.session.commit()
     start = end = date(2026, 9, 2)
     data = report_data(start, end, ['Doncaster', 'Lonsdale'])
-    assert data['totals']['Doncaster']['sales'] == 251 * 2500
+    assert data['totals']['Doncaster']['sales'] == 252 * 2500
     assert data['totals']['Lonsdale']['sales'] == 163 * 2500
-    assert data['sales'] == (251 + 163) * 2500
+    assert data['sales'] == (252 + 163) * 2500
     assert report_data(date(2026, 9, 4), date(2026, 9, 4), ['Doncaster'])['sales'] == 2500
     coverage = saved_coverage(start, end, ['Doncaster'])['Doncaster']
     assert coverage['count'] == 253
     assert coverage['first'] == date(2026, 9, 2)
     assert coverage['last'] == date(2026, 9, 4)
     assert {s['state']: s['count'] for s in coverage['states']} == {'COMPLETED': 251, 'OPEN': 1}
+
+
+def test_open_sales_legacy_details_and_status_transitions(app, order):
+    for state in ('OPEN', 'COMPLETED', 'DRAFT', 'CANCELED'):
+        item = deepcopy(order)
+        item.update(id=state, state=state)
+        save_order('Doncaster', 'loc', item)
+    prior = deepcopy(order)
+    prior.update(id='prior', state='OPEN', created_at='2026-09-01T01:00:00Z')
+    save_order('Doncaster', 'loc', prior)
+    # Simulate an OPEN order saved before this change, with no projected lines.
+    ReportLine.query.filter_by(store='Doncaster', order_id='OPEN').delete()
+    db.session.commit()
+    def check(expected_orders):
+        data = report_data(date(2026, 9, 2), date(2026, 9, 2), ['Doncaster'])
+        assert data['order_count'] == expected_orders
+        assert data['sales'] == expected_orders * 2500
+        assert data['previous_sales'] == 2500
+        assert data['item_count'] == Decimal('1.5') * expected_orders
+        assert data['products'][0][3] == expected_orders * 2500
+        assert data['day_rows'][0]['best_qty'] == Decimal('1.5') * expected_orders
+        assert data['chart']['series']['Doncaster'] == [expected_orders * 25]
+    from decimal import Decimal
+    check(2)
+    item = deepcopy(order)
+    item.update(id='OPEN', state='OPEN')
+    save_order('Doncaster', 'loc', item)
+    db.session.commit()
+    check(2)  # Re-syncing projects lines without counting them twice.
+    item.update(state='COMPLETED', updated_at='2026-09-03T00:00:00Z')
+    save_order('Doncaster', 'loc', item)
+    db.session.commit()
+    check(2)
+    item.update(state='DRAFT', updated_at='2026-09-04T00:00:00Z')
+    save_order('Doncaster', 'loc', item)
+    db.session.commit()
+    check(1)
+
+
+def test_page_explains_open_inclusion(app, order):
+    order['state'] = 'OPEN'
+    save_order('Doncaster', 'loc', order)
+    db.session.commit()
+    c = app.test_client()
+    with c.session_transaction() as session:
+        session['_user_id'] = '1'
+    response = c.get('/sales_report?start_date=2026-09-02&end_date=2026-09-02')
+    assert response.status_code == 200
+    assert b'OPEN: 1 orders' in response.data
+    assert b'(excluded from sales)' not in response.data
+    assert b'Open and completed orders are included' in response.data
