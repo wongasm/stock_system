@@ -1,6 +1,7 @@
 """Durable Square reporting, independent of inventory deduction records."""
 import os
 import secrets
+import click
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
@@ -297,7 +298,56 @@ def saved_weeks(stores):
     return [weeks[key] for key in sorted(weeks, reverse=True)]
 
 
+def recategorize_saved_sales(store=None, batch_size=200):
+    """Reapply current mappings locally; preserve sales and sync checkpoints."""
+    if store is not None and store not in STORES:
+        raise ValueError('Unknown store.')
+    if not 1 <= batch_size <= 1000:
+        raise ValueError('Batch size must be between 1 and 1000.')
+    for name in ([store] if store else STORES):
+        after = None
+        scanned = changed = 0
+        while True:
+            try:
+                query = ReportOrder.query.filter_by(store=name)
+                if after is not None:
+                    query = query.filter(ReportOrder.order_id > after)
+                # Serialize against order updates while deriving variation rules
+                # from saved payloads. Keep each lock/transaction short.
+                orders = query.order_by(ReportOrder.order_id).limit(batch_size).with_for_update().all()
+                if not orders:
+                    db.session.commit()
+                    break
+                by_id = {o.order_id: o for o in orders}
+                lines = ReportLine.query.filter(ReportLine.store == name,
+                    ReportLine.order_id.in_(by_id)).all()
+                variations = {o.order_id: {line.get('uid') or str(i): line.get('variation_name', '')
+                    for i, line in enumerate(o.payload.get('line_items', []))} for o in orders}
+                for line in lines:
+                    category = category_for(line.name, variations[line.order_id].get(line.line_id, ''))
+                    if line.category != category:
+                        line.category = category
+                        changed += 1
+                after = orders[-1].order_id
+                scanned += len(lines)
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+                raise
+            yield {'store': name, 'scanned': scanned, 'changed': changed, 'done': False}
+        yield {'store': name, 'scanned': scanned, 'changed': changed, 'done': True}
+
+
 def register_sales_reporting(app):
+    @app.cli.command('recategorize-sales')
+    @click.option('--store', type=click.Choice(STORES), default=None, help='Default: all stores.')
+    @click.option('--batch-size', type=click.IntRange(1, 1000), default=200, show_default=True)
+    def recategorize_sales_command(store, batch_size):
+        """Update saved sales categories from the current ITEM_CATEGORY_MAP."""
+        for result in recategorize_saved_sales(store, batch_size):
+            click.echo('{store}: {scanned} lines checked, {changed} updated{suffix}'.format(
+                **result, suffix=' — complete' if result['done'] else ''))
+
     def admin():
         if current_user.role != 'admin':
             abort(403)

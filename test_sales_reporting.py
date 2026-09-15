@@ -299,3 +299,34 @@ def test_week_archive_lazy_details_and_boundaries(app, order, monkeypatch):
     assert b'31 Aug 2026' in response.data  # Archive includes history outside top date filter.
     assert b'Weekly product breakdown' not in response.data  # Details only fetched on expansion.
     assert len(calls)==1
+
+
+def test_recategorize_saved_data_preserves_totals_and_variations(app, order, monkeypatch):
+    import sales_reporting as sr
+    order['line_items'].append({'uid':'waffle','name':'Mango','variation_name':'Waffle',
+        'quantity':'1','total_money':{'amount':1000}})
+    for i in range(3):
+        item=deepcopy(order);item['id']=str(i)
+        save_order('Doncaster','loc',item)
+    other=deepcopy(order);other['id']='other'
+    save_order('Lonsdale','loc',other)
+    db.session.add(ReportSync(store='Doncaster',location_id='loc',cursor='keep-cursor',
+        watermark=datetime(2026,9,1),processed=99))
+    db.session.commit()
+    before=[(o.order_id,o.total,o.updated_at,o.payload) for o in ReportOrder.query.order_by(ReportOrder.order_id)]
+    monkeypatch.setitem(sr.ITEM_CATEGORY_MAP,'Mango','Seasonal')
+    monkeypatch.setattr(sr.requests,'post',lambda *a,**kw:pytest.fail('Must not contact Square'))
+    result=app.test_cli_runner().invoke(args=['recategorize-sales','--store','Doncaster','--batch-size','1'])
+    assert result.exit_code==0, result.output
+    assert '6 lines checked, 3 updated' in result.output
+    assert ReportLine.query.filter_by(store='Doncaster',category='Seasonal').count()==3
+    assert ReportLine.query.filter_by(store='Doncaster',category='Waffles').count()==3
+    assert ReportLine.query.filter_by(store='Lonsdale',category='Bingsu').count()==1
+    assert before==[(o.order_id,o.total,o.updated_at,o.payload) for o in ReportOrder.query.order_by(ReportOrder.order_id)]
+    state=db.session.get(ReportSync,'Doncaster')
+    assert state.cursor=='keep-cursor' and state.processed==99 and state.watermark==datetime(2026,9,1)
+    result=app.test_cli_runner().invoke(args=['recategorize-sales','--store','Doncaster'])
+    assert result.exit_code==0 and '0 updated' in result.output
+    data=report_data(date(2026,9,2),date(2026,9,2),['Doncaster'])
+    assert data['categories']['Seasonal']['sales']==7500
+    assert 'Bingsu' not in data['categories']

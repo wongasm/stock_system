@@ -65,3 +65,13 @@ At the owner's request, OPEN and COMPLETED orders now contribute to sales, order
 The transaction list and its pagination query have been removed. All weeks with saved OPEN/COMPLETED sales appear newest first, independently of the top date range and scoped to the selected store. Week boundaries are Monday–Sunday using saved Melbourne business dates. Each expansion requests one authenticated administrator-only week endpoint, showing seven daily rows per store, prior-week comparisons, totals, averages, bingsu best sellers, drinks/waffle revenue and shares, and product totals. Missing days are marked as having no saved orders. Existing sync warnings remain.
 
 Week details load on first expansion and are reused until the page reloads; failed requests offer Retry. Both the list and details read saved data without contacting Square. No records are deleted. Fourteen tests pass, including week boundaries, filtering, authorization, input validation and lazy loading. Browser checks with sample data verified expansion and product detail.
+
+## Refresh saved categories after editing mappings
+
+After updating `ITEM_CATEGORY_MAP` in `square_helpers.py`, run from the deployed project with its virtualenv active:
+
+```bash
+python -m flask --app app recategorize-sales
+```
+
+Optionally use `--store Doncaster` or `--batch-size 200`. The command reads saved order payloads to preserve the existing waffle variation rule and updates only category fields in saved sales lines. It commits short batches, prints progress, makes no Square requests, preserves order amounts and sync checkpoints, and is safe to rerun after interruption. Legacy OPEN orders without projected lines already use the current mapping from their saved payloads. Reload the web app to load edited Python mappings, then refresh the report (including expanded weeks) after the command completes. Editing Square catalog categories does not change this hardcoded map. Fifteen tests pass, including category changes, store scope, idempotency and preservation of monetary values and sync state.
