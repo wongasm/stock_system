@@ -82,7 +82,7 @@ def preview_saved_profiles():
         counts = summarize_profiles(snapshots['loyalty_accounts_v4'].get('accounts', []),
                                     snapshots['customer_directory_v1'].get('customers', {}))
         print(json.dumps(counts, indent=2, sort_keys=True))
-        print('Email permission: not recorded by the current loyalty signup. No contacts are marked subscribed.')
+        print('Email permission: owner confirms loyalty enrollment requires marketing opt-in. Individual historical consent dates are not in this cache. This preview changes no subscriptions.')
         print('Purchase tracking: saved sales need customer links before inactivity/return attribution can run.')
 
 
