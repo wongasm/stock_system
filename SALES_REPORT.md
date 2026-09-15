@@ -49,3 +49,9 @@ Rebuild re-reads all history and replaces matching records while retaining saved
 Nine isolated database/route/API tests cover idempotency, changed and canceled orders, Melbourne date conversion, decimal quantities, comparison periods, page rollback, cursor resume, watermark overlap, rebuild retention, busy/expired workers, stale versions, query shape, HTTP failure, authentication, administrator authorization, CSRF and date validation. Run `python -m pytest -q test_sales_reporting.py` in a test environment.
 
 The page was rendered with synthetic data in the real navbar/shared CSS, and weekly chart grouping and daily detail were exercised in a browser with no JavaScript errors. No production database, live credentials or real Square import was available in this local checkout. Live import and production MySQL verification remain deployment checks.
+
+## September 15 import diagnostics fix
+
+Sync window end timestamps now use whole seconds before the first Square request. Default MySQL DATETIME columns discard fractional seconds; previously the next page could use a different end timestamp from the first page, violating Square's requirement to keep cursor queries identical. An already rejected cursor may require Rebuild all history after deployment; saved orders remain in place. This code-level defect has been reproduced by simulating MySQL timestamp precision. It has not yet been confirmed as the cause of the reported production totals.
+
+The page now shows saved order counts and date bounds, selected-period amounts by order status, and warnings for unfinished, failed or out-of-date syncs. Date bounds are explicitly not evidence of complete coverage. Added regression tests verify cursor-bound stability and date/store totals across more than 100 orders (independent of transaction pagination). Eleven tests pass.

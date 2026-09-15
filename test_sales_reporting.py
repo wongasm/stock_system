@@ -160,3 +160,48 @@ def test_square_query_and_failure(monkeypatch):
     Response.status_code=429
     with pytest.raises(ValueError,match='HTTP 429'):
         sr.fetch_page('Doncaster',datetime(2020,1,1),datetime(2026,1,1),'next')
+
+
+def test_cursor_bounds_survive_mysql_datetime_precision(app, order):
+    bounds = []
+    def fetch(store, start, end, cursor):
+        bounds.append((start, end))
+        return {'orders': [order], 'cursor': 'next'} if cursor is None else {'orders': []}
+    sync_step('Doncaster', fetch=fetch)
+    # Simulate round-tripping the default MySQL DATETIME columns.
+    row = ReportSync.query.first()
+    row.window_start = row.window_start.replace(microsecond=0)
+    row.window_end = row.window_end.replace(microsecond=0)
+    db.session.commit()
+    sync_step('Doncaster', fetch=fetch)
+    assert bounds[0] == bounds[1]
+    assert ReportSync.query.first().watermark == bounds[0][1]
+
+
+def test_store_totals_include_all_pages_and_obey_dates(app, order):
+    from sales_reporting import saved_coverage
+    for store, count in [('Doncaster', 251), ('Lonsdale', 163)]:
+        for i in range(count):
+            item = deepcopy(order)
+            item['id'] = str(i)
+            save_order(store, 'loc', item)
+    outside = deepcopy(order)
+    outside['id'] = 'outside'
+    outside['created_at'] = '2026-09-03T14:00:00Z'
+    save_order('Doncaster', 'loc', outside)
+    opened = deepcopy(order)
+    opened['id'] = 'open'
+    opened['state'] = 'OPEN'
+    save_order('Doncaster', 'loc', opened)
+    db.session.commit()
+    start = end = date(2026, 9, 2)
+    data = report_data(start, end, ['Doncaster', 'Lonsdale'])
+    assert data['totals']['Doncaster']['sales'] == 251 * 2500
+    assert data['totals']['Lonsdale']['sales'] == 163 * 2500
+    assert data['sales'] == (251 + 163) * 2500
+    assert report_data(date(2026, 9, 4), date(2026, 9, 4), ['Doncaster'])['sales'] == 2500
+    coverage = saved_coverage(start, end, ['Doncaster'])['Doncaster']
+    assert coverage['count'] == 253
+    assert coverage['first'] == date(2026, 9, 2)
+    assert coverage['last'] == date(2026, 9, 4)
+    assert {s['state']: s['count'] for s in coverage['states']} == {'COMPLETED': 251, 'OPEN': 1}

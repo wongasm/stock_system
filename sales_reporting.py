@@ -155,7 +155,10 @@ def sync_step(store, rebuild=False, fetch=fetch_page):
             raise ValueError('Store location changed. Restore the original location before syncing.')
         starting = rebuild or row.window_end is None
         window_start = (EPOCH if rebuild else max(EPOCH, (row.watermark or EPOCH) - timedelta(hours=1))) if starting else row.window_start
-        window_end = now if starting else row.window_end
+        # MySQL DATETIME stores whole seconds by default. Use the same precision
+        # on the first request and resumed pages: Square cursors require an
+        # identical query, including the timestamp bounds.
+        window_end = now.replace(microsecond=0) if starting else row.window_end
         cursor = None if starting else row.cursor
         result = fetch(store, window_start, window_end, cursor)
         # Conditional update obtains a write lock, fencing workers with expired leases.
@@ -239,6 +242,20 @@ def report_data(start, end, stores):
         comparison_start=previous, comparison_end=start-timedelta(days=1))
 
 
+def saved_coverage(start, end, stores):
+    coverage = {s: {'count': 0, 'first': None, 'last': None, 'states': []} for s in stores}
+    for store, count, first, last in db.session.query(
+            ReportOrder.store, func.count(), func.min(ReportOrder.business_date),
+            func.max(ReportOrder.business_date)).filter(ReportOrder.store.in_(stores)).group_by(ReportOrder.store):
+        coverage[store].update(count=count, first=first, last=last)
+    for store, state, count, amount in db.session.query(
+            ReportOrder.store, ReportOrder.state, func.count(), func.sum(ReportOrder.total)
+            ).filter(ReportOrder.store.in_(stores), ReportOrder.business_date.between(start, end)
+            ).group_by(ReportOrder.store, ReportOrder.state):
+        coverage[store]['states'].append({'state': state, 'count': count, 'amount': amount})
+    return coverage
+
+
 def register_sales_reporting(app):
     def admin():
         if current_user.role != 'admin':
@@ -268,7 +285,7 @@ def register_sales_reporting(app):
         statuses = {r.store: r for r in ReportSync.query.all()}
         return render_template('sales_report.html', **data, start_date=start.isoformat(), end_date=end.isoformat(),
             store_filter=store, stores=STORES, statuses=statuses, transactions=transactions,
-            csrf=session['sales_csrf'])
+            csrf=session['sales_csrf'], coverage=saved_coverage(start, end, list(STORES)))
 
     # Preserve the existing endpoint and all navigation links.
     app.add_url_rule('/sales_report', endpoint='sales_report', view_func=page, methods=['GET'])
