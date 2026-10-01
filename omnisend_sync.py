@@ -1,5 +1,7 @@
 """Sync loyalty profiles to Omnisend. Preview by default; no marketing events."""
 import argparse
+from contextlib import contextmanager
+import fcntl
 from collections import Counter
 from datetime import datetime, timezone
 import json
@@ -83,7 +85,7 @@ class OmnisendClient:
         return contact
 
 
-def sync_profiles(profiles, client, apply=False):
+def sync_profiles(profiles, client, apply=False, scheduled=False):
     counts=Counter()
     # Timestamp denotes this import's subscription registration, not the original
     # customer opt-in date. Never fabricate a consent.createdAt field.
@@ -98,6 +100,29 @@ def sync_profiles(profiles, client, apply=False):
             if previous and previous!=profile['customProperties']['bc_square_customer_id']:
                 counts['skipped_identity_conflict']+=1
                 continue
+        if scheduled:
+            if not existing:
+                counts['skipped_not_imported']+=1
+                continue
+            properties=existing.get('customProperties') or {}
+            if properties.get('bc_square_customer_id') != profile['customProperties']['bc_square_customer_id']:
+                counts['skipped_unlinked']+=1
+                continue
+            account_id=profile['customProperties'].get('bc_loyalty_account_id')
+            if not account_id or properties.get('bc_loyalty_account_id') != account_id:
+                counts['skipped_account_conflict']+=1
+                continue
+            points=profile['customProperties']['bc_loyalty_points']
+            if properties.get('bc_loyalty_points') == points:
+                counts['unchanged']+=1
+                continue
+            if apply:
+                # Only the points property changes; never write channel status,
+                # names, consent, tags or purchase-tracking flags in hourly runs.
+                client.request('PATCH','/'+quote(existing['id'],safe=''),
+                               json={'customProperties':{'bc_loyalty_points':points}})
+            counts['updated' if apply else 'would_update']+=1
+            continue
         payload={k:v for k,v in profile.items() if k!='email'}
         if not apply:
             counts['would_update' if existing else 'would_create']+=1
@@ -130,28 +155,60 @@ def load_fresh_profiles():
         return prepare_profiles(accounts['accounts'], customers['customers'])
 
 
+@contextmanager
+def sync_lock(path):
+    # Keep the file in place: unlinking it could let another process lock a
+    # different inode. The OS releases flock even if this process crashes.
+    with open(path, 'a') as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def log_status(status, **fields):
+    print(json.dumps({'time':datetime.now(timezone.utc).isoformat(),
+                      'status':status, **fields}), flush=True)
+
+
 def main():
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).with_name('.env'))
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply',action='store_true',help='Write profiles. Default is read-only preview.')
     parser.add_argument('--automations-paused',action='store_true',help='Confirm all Omnisend workflows are disabled for this import.')
+    parser.add_argument('--scheduled',action='store_true',help='Update changed points only for existing linked subscribers. Enabled segment workflows may trigger.')
     parser.add_argument('--limit',type=int,default=None,help='Optional limit for a small initial test.')
     args=parser.parse_args()
-    if args.apply and not args.automations_paused:
+    if args.apply and not (args.automations_paused or args.scheduled):
         parser.error('Disable Omnisend automations first, then pass --automations-paused. Contact changes can trigger emails.')
     if args.limit is not None and args.limit<1:
         parser.error('--limit must be positive')
     try:
-        client=OmnisendClient(os.getenv('OMNISEND_API_KEY','').strip())
-        print('Refreshing Square loyalty and customer snapshots…',flush=True)
-        profiles,counts=load_fresh_profiles()
-        print(json.dumps(counts,indent=2),flush=True)
-        result=sync_profiles(profiles[:args.limit],client,args.apply)
-        print(json.dumps(result,indent=2),flush=True)
-        print('Profile sync finished. No custom events sent.' if args.apply else 'Preview finished. No Omnisend contacts changed.')
+        with sync_lock(Path(__file__).with_name('.omnisend-sync.lock')) as acquired:
+            if not acquired:
+                log_status('skipped_already_running')
+                return 0
+            log_status('started', mode='scheduled' if args.scheduled else 'import', apply=args.apply)
+            client=OmnisendClient(os.getenv('OMNISEND_API_KEY','').strip())
+            print('Refreshing Square loyalty and customer snapshots…',flush=True)
+            profiles,counts=load_fresh_profiles()
+            print(json.dumps(counts,indent=2),flush=True)
+            result=sync_profiles(profiles[:args.limit],client,args.apply,scheduled=args.scheduled)
+            log_status('finished', counts=result)
+            print('Profile sync finished. No custom events sent.' if args.apply else 'Preview finished. No Omnisend contacts changed.')
     except ValueError as exc:
-        print(str(exc),flush=True)
+        # Log the exception class rather than arbitrary upstream response text,
+        # which could include contact data or credentials.
+        log_status('failed', error_type=type(exc).__name__)
+        return 1
+    except Exception as exc:
+        log_status('failed', error_type=type(exc).__name__)
         return 1
     return 0
 

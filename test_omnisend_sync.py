@@ -82,3 +82,70 @@ def test_lookup_response_is_verified(monkeypatch):
     monkeypatch.setattr(client,'request',lambda *a,**k:(200,{}))
     with pytest.raises(ValueError,match='Unexpected'):
         client.lookup('a@example.com')
+
+
+@pytest.fixture
+def linked(profile):
+    profile['customProperties']['bc_loyalty_account_id']='loyalty-a'
+    properties=deepcopy(profile['customProperties'])
+    properties['bc_loyalty_points']=25
+    return {'id':'one','_email_status':'subscribed','customProperties':properties}
+
+
+def test_scheduled_only_patches_points_and_is_idempotent(profile,linked):
+    client=Client(linked)
+    assert sync_profiles([profile],client,True,scheduled=True)=={'updated':1}
+    assert client.writes==[(('PATCH','/one'),{'json':{'customProperties':{'bc_loyalty_points':31}}})]
+    linked['customProperties']['bc_loyalty_points']=31
+    client.writes.clear()
+    assert sync_profiles([profile],client,True,scheduled=True)=={'unchanged':1}
+    assert not client.writes
+
+
+@pytest.mark.parametrize('case',['missing','unlinked','wrong_account','unsubscribed'])
+def test_scheduled_never_imports_or_relinks(profile,linked,case):
+    if case=='missing':
+        linked=None
+    elif case=='unlinked':
+        del linked['customProperties']['bc_square_customer_id']
+    elif case=='wrong_account':
+        linked['customProperties']['bc_loyalty_account_id']='another'
+    else:
+        linked['_email_status']='unsubscribed'
+    client=Client(linked)
+    result=sync_profiles([profile],client,True,scheduled=True)
+    assert sum(result.values())==1
+    assert not client.writes
+
+
+def test_scheduled_preview_does_not_write(profile,linked):
+    client=Client(linked)
+    assert sync_profiles([profile],client,scheduled=True)=={'would_update':1}
+    assert not client.writes
+
+
+def test_lock_blocks_overlap_and_releases_after_failure(tmp_path):
+    from omnisend_sync import sync_lock
+    path=tmp_path/'sync.lock'
+    with pytest.raises(RuntimeError):
+        with sync_lock(path) as acquired:
+            assert acquired
+            with sync_lock(path) as second:
+                assert not second
+            raise RuntimeError('interrupted')
+    with sync_lock(path) as acquired:
+        assert acquired
+
+
+def test_square_failure_prevents_stale_upload(monkeypatch):
+    import sys
+    import types
+    from contextlib import nullcontext
+    from omnisend_sync import load_fresh_profiles
+    fake_app=types.SimpleNamespace(app_context=lambda:nullcontext())
+    monkeypatch.setitem(sys.modules,'app',types.SimpleNamespace(app=fake_app,cache_set=lambda *a:pytest.fail('must not cache failure')))
+    monkeypatch.setitem(sys.modules,'square_api',types.SimpleNamespace(
+        fetch_loyalty_accounts=lambda:{'ok':False},
+        fetch_customer_directory=lambda:{'ok':True,'customers':{}}))
+    with pytest.raises(ValueError,match='Square refresh failed'):
+        load_fresh_profiles()

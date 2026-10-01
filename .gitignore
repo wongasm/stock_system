@@ -4,6 +4,7 @@
 # Python cache
 __pycache__/
 *.pyc
+.omnisend-sync.lock
 
 # mac
 .DS_Store

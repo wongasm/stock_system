@@ -1,5 +1,52 @@
 # Omnisend setup check
 
+## Hourly points sync
+
+Pull the latest code on PythonAnywhere from the stock_system directory. Use the
+same Python interpreter/environment that successfully ran the initial import.
+
+First preview (no Omnisend changes):
+
+```bash
+python -u omnisend_sync.py --scheduled
+```
+
+Then in PythonAnywhere → Tasks add an **hourly** task, minute **10**:
+
+```bash
+cd /home/wongasm2/stock_system && python -u omnisend_sync.py --scheduled --apply
+```
+
+If the console uses an activated virtualenv, replace `python` in the scheduled
+command with the absolute path printed by `python -c 'import sys; print(sys.executable)'`
+in that working console. Scheduled tasks do not inherit console activation.
+The `.env` file is loaded from beside the script, not from the scheduler's directory.
+
+This mode updates only changed `bc_loyalty_points` values for existing subscribed
+contacts whose Square customer **and loyalty account** IDs match. It does not
+create contacts, change subscription status, reset purchase tracking, or send
+custom events. New customers must still go through the separate import process.
+Unsubscribed, unlinked, conflicting and shared-email profiles are skipped.
+
+Points changes can trigger enabled segment workflows. This command never enables
+workflows; keep the loyalty email in draft until reviewed. Do not use the initial
+import's `--automations-paused` flag for a live recurring points sync.
+
+The entire refresh and sync is protected by a nonblocking file lock shared with
+manual imports on this host. An overlapping run logs `skipped_already_running`.
+Square refresh failures stop the run instead of uploading stale fallback data.
+PythonAnywhere's task log receives UTC start/finish timestamps and final counts.
+Failures log their exception class and exit nonzero, without credentials or
+contact details. Completed writes remain saved. There are no immediate automatic
+retries after an ambiguous write; the next hourly run re-reads each balance and
+only writes differences. Check for a `finished` entry after the first run. This
+does not configure alerts or purchase/return attribution.
+
+Scheduled tasks: https://help.pythonanywhere.com/pages/ScheduledTasks
+Custom property updates: https://api-docs.omnisend.com/reference/contacts#custom-properties
+
+## Initial setup diagnostic
+
 From the deployed stock_system directory, using the app's virtualenv:
 
 ```bash
