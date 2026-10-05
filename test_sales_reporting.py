@@ -109,7 +109,9 @@ def test_routes_access_validation_no_fetch(app,order):
     save_order('Doncaster','loc',order);db.session.commit()
     response=c.get('/sales_report?start_date=2026-09-02&end_date=2026-09-02')
     assert response.status_code==200
-    assert b'$25.00' in response.data and b'Mango' in response.data
+    assert b'$25.00' in response.data and b'Mango' not in response.data
+    detail=c.get('/sales_report/details?start_date=2026-09-02&end_date=2026-09-02')
+    assert b'Mango' in detail.data and b'$25.00' in detail.data
 
 def test_previous_period_and_refunds(app,order):
     save_order('Doncaster','loc',order)
@@ -253,8 +255,9 @@ def test_page_explains_open_inclusion(app, order):
         session['_user_id'] = '1'
     response = c.get('/sales_report?start_date=2026-09-02&end_date=2026-09-02')
     assert response.status_code == 200
-    assert b'OPEN: 1 orders' in response.data
-    assert b'(excluded from sales)' not in response.data
+    coverage=c.get('/sales_report/coverage?start_date=2026-09-02&end_date=2026-09-02')
+    assert b'OPEN: 1 orders' in coverage.data
+    assert b'(excluded from sales)' not in coverage.data
     assert b'Open and completed orders are included' in response.data
 
 
@@ -290,13 +293,16 @@ def test_week_archive_lazy_details_and_boundaries(app, order, monkeypatch):
     assert response.headers['Cache-Control']=='no-store'
     calls=[]
     real=sr.report_data
-    def track(start,end,stores):
-        calls.append((start,end));return real(start,end,stores)
+    def track(start,end,stores,**kwargs):
+        calls.append((start,end));return real(start,end,stores,**kwargs)
     monkeypatch.setattr(sr,'report_data',track)
     response=c.get('/sales_report?start_date=2026-09-07&end_date=2026-09-07&store_filter=Doncaster')
     assert response.status_code==200
     assert b'Transactions' not in response.data and b'Transaction pages' not in response.data
-    assert b'31 Aug 2026' in response.data  # Archive includes history outside top date filter.
+    assert b'31 Aug 2026' not in response.data  # Archive is deferred too.
+    archive=c.get('/sales_report/history?store_filter=Doncaster')
+    assert b'31 Aug 2026' in archive.data  # Includes history outside top date filter.
+    assert b'class="saved-week lazy-section' in archive.data
     assert b'Weekly product breakdown' not in response.data  # Details only fetched on expansion.
     assert len(calls)==1
 
@@ -330,3 +336,63 @@ def test_recategorize_saved_data_preserves_totals_and_variations(app, order, mon
     data=report_data(date(2026,9,2),date(2026,9,2),['Doncaster'])
     assert data['categories']['Seasonal']['sales']==7500
     assert 'Bingsu' not in data['categories']
+
+
+def test_initial_page_only_reads_bounded_order_totals_and_status(app, order, monkeypatch):
+    from sqlalchemy import event
+    import sales_reporting as sr
+    save_order('Doncaster','loc',order);db.session.commit()
+    monkeypatch.setattr(sr,'saved_weeks',lambda *a:pytest.fail('History must be deferred'))
+    monkeypatch.setattr(sr,'saved_coverage',lambda *a:pytest.fail('Coverage must be deferred'))
+    statements=[]
+    def capture(conn,cursor,statement,parameters,context,executemany):
+        statements.append(statement.lower())
+    c=app.test_client()
+    with c.session_transaction() as s:s['_user_id']='1'
+    event.listen(db.engine,'before_cursor_execute',capture)
+    try:
+        response=c.get('/sales_report?start_date=2026-09-02&end_date=2026-09-02')
+    finally:
+        event.remove(db.engine,'before_cursor_execute',capture)
+    assert response.status_code==200 and b'$25.00' in response.data
+    reads=[q for q in statements if q.lstrip().startswith('select')]
+    assert len(reads)==2
+    assert not any('sales_report_line' in q or 'payload' in q for q in reads)
+    assert 'between' in next(q for q in reads if 'sales_report_order' in q)
+    assert b'Load item totals' in response.data
+
+
+def test_deferred_sections_security_filters_and_freshness(app,order,monkeypatch):
+    import sales_reporting as sr
+    c=app.test_client()
+    paths=['/sales_report/details','/sales_report/history','/sales_report/coverage']
+    for path in paths:assert c.get(path).status_code==401
+    with c.session_transaction() as s:s['_user_id']='2'
+    g.pop('_login_user',None)
+    for path in paths:assert c.get(path).status_code==403
+    with c.session_transaction() as s:s['_user_id']='1'
+    g.pop('_login_user',None)
+    for path in paths:assert c.get(path+'?store_filter=bad').status_code==400
+    for path in [paths[0],paths[2]]:
+        for dates in ['start_date=bad','start_date=2026-09-03&end_date=2026-09-01',
+                      'start_date=0001-01-01&end_date=0001-01-01']:
+            assert c.get(path+'?'+dates).status_code==400
+    save_order('Doncaster','loc',order)
+    other=deepcopy(order);other['line_items'][0]['name']='Other-store-only'
+    save_order('Lonsdale','loc',other);db.session.commit()
+    monkeypatch.setattr(sr.requests,'post',lambda *a,**kw:pytest.fail('Saved data only'))
+    query='?start_date=2026-09-02&end_date=2026-09-02&store_filter=Doncaster'
+    for path in paths:
+        response=c.get(path+query)
+        assert response.status_code==200
+        assert response.headers['Cache-Control']=='no-store'
+    detail=c.get(paths[0]+query)
+    assert b'Mango' in detail.data and b'Other-store-only' not in detail.data
+    assert b'data-item-count="1.5"' in detail.data
+    monkeypatch.setitem(sr.ITEM_CATEGORY_MAP,'Mango','Seasonal')
+    list(sr.recategorize_saved_sales('Doncaster'))
+    assert b'Seasonal' in c.get(paths[0]+query).data
+    order.update(state='CANCELED',updated_at='2026-09-03T01:00:00Z')
+    save_order('Doncaster','loc',order);db.session.commit()
+    assert b'data-item-count="0"' in c.get(paths[0]+query).data
+    assert b'No saved sales weeks' in c.get(paths[1]+query).data

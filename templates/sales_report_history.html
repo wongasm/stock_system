@@ -1,0 +1,2 @@
+{% from 'sales_report_macros.html' import money, change %}
+{% for w in weeks %}<details class="saved-week lazy-section border-bottom py-3" data-url="{{ url_for('sales_report_week',week=w.start.isoformat(),store_filter=store_filter) }}"><summary><strong>{{ w.start.strftime('%d %b %Y') }} – {{ w.end.strftime('%d %b %Y') }}</strong> · {{ money(w.sales) }} · {{ w.orders }} orders</summary><div class="week-body lazy-body mt-3" aria-live="polite"></div></details>{% else %}<p>No saved sales weeks yet. Sync history to populate this list.</p>{% endfor %}

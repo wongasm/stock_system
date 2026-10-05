@@ -75,3 +75,37 @@ python -m flask --app app recategorize-sales
 ```
 
 Optionally use `--store Doncaster` or `--batch-size 200`. The command reads saved order payloads to preserve the existing waffle variation rule and updates only category fields in saved sales lines. It commits short batches, prints progress, makes no Square requests, preserves order amounts and sync checkpoints, and is safe to rerun after interruption. Legacy OPEN orders without projected lines already use the current mapping from their saved payloads. Reload the web app to load edited Python mappings, then refresh the report (including expanded weeks) after the command completes. Editing Square catalog categories does not change this hardcoded map. Fifteen tests pass, including category changes, store scope, idempotency and preservation of monetary values and sync state.
+
+## Faster initial loading (October 2026)
+
+The initial page now runs only the selected/prior-period order aggregation and the
+small sync-status query. It no longer scans all historical orders for the archive
+and coverage, groups product lines, or reads legacy OPEN payloads before showing
+sales and store comparison.
+
+- **Product mix and daily breakdown** loads on expansion; **Load item totals**
+  opens the same section and fills the Items sold card. The card shows a dash,
+  not a misleading zero, before loading.
+- **Weekly breakdown · all saved history** loads the week list on expansion;
+  each week still loads its details separately.
+- **Saved data coverage** loads on expansion inside Sync status and history.
+- Each section loads once per page, with duplicate-request protection, a loading
+  state and a retry button. Reload the report after syncing or recategorizing.
+  Responses use `Cache-Control: no-store`; no persistent result cache can hide
+  category or status updates. All endpoints enforce administrator login and
+  validate date/store filters. No schema change or new history import is needed.
+
+Validation: 17 sales-report tests pass, including a query-count regression that
+allows only two report queries on initial load and rejects payload/line reads.
+Browser checks with sample data verified item totals and nested archive/week
+expansion. A local in-memory SQLite benchmark with 120,000 orders and 240,000
+lines compared the old eager data workload against the initial summary workload
+(median of three runs, excluding rendering/network): seven days 54.5 ms → 1.2 ms;
+one year 245.0 ms → 39.1 ms. Sales, order counts, prior totals, store totals and
+chart values matched. These are sample-data measurements, not production MySQL
+or end-to-end browser timings. Expanding a large detail range still performs its
+full calculation on demand.
+
+Deploy `sales_reporting.py`, `templates/sales_report.html`, and all four new
+`sales_report_{macros,details,history,coverage}.html` templates together, then
+reload the PythonAnywhere web app. Existing scheduled sync jobs remain unchanged.

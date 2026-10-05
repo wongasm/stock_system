@@ -1,0 +1,2 @@
+{% macro money(cents) %}${{ '{:,.2f}'.format(cents / 100) }}{% endmacro %}
+{% macro change(now, before) %}{% if before %}<span class="{{ 'positive' if now >= before else 'negative' }}">{{ '%+.1f'|format((now-before)/before*100) }}%</span>{% else %}—{% endif %}{% endmacro %}
