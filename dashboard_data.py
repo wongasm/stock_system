@@ -82,7 +82,8 @@ def saved_dashboard_sales(now=None):
 
     last_checked = min(checked_through) if len(checked_through) == len(STORES) else None
     available = bool(daily or checked_through)
-    money = lambda cents: round(cents / 100, 2)
+    # MySQL SUM returns Decimal; normalize only the rounded display values.
+    money = lambda cents: float(round(cents / 100, 2))
     quantity_label = lambda quantity: format(quantity.normalize(), 'f')
     return {
         'today': today,

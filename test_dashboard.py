@@ -1,6 +1,7 @@
 """Dashboard reads, incremental updates, and login without live Square access."""
 from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 import importlib
 import json
 import re
@@ -8,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import event
+from sqlalchemy.orm import Query
 from werkzeug.security import generate_password_hash
 
 from dashboard_data import saved_dashboard_sales
@@ -107,6 +109,34 @@ def test_incremental_sync_updates_dashboard_without_duplicates(web, monkeypatch)
         save_order('Doncaster', 'loc', changed)
         db.session.commit()
         assert saved_dashboard_sales()['today_revenue'] == 0
+
+
+@pytest.mark.parametrize('path', ['/dashboard', '/dashboard/summary'])
+def test_dashboard_renders_decimal_sales_aggregates_and_empty_days(web, monkeypatch, path):
+    original_all = Query.all
+
+    def mysql_aggregate_all(query):
+        rows = original_all(query)
+        columns = query.column_descriptions
+        if len(columns) == 4 and columns[0]['name'] == 'business_date':
+            return [(day, store, Decimal(cents), count) for day, store, cents, count in rows]
+        return rows
+
+    monkeypatch.setattr(Query, 'all', mysql_aggregate_all)
+    with web.app.app_context():
+        save_order('Doncaster', 'loc', order(created=datetime.now(timezone.utc).isoformat(), cents=2501))
+        db.session.commit()
+
+    response = admin_client(web).get(path)
+    assert response.status_code == 200
+    assert 'height: 100.0%' in response.text
+    assert 'height: 0.0%' in response.text
+    with web.app.app_context():
+        result = saved_dashboard_sales()
+        assert result['today_revenue'] == 25.01
+        assert result['avg_order_value'] == 25.01
+        assert all(isinstance(row['revenue'], float) for row in result['trend'])
+        assert all(isinstance(row['revenue'], float) for row in result['store_sales_today'])
 
 
 def test_small_date_bounded_queries_and_sync_freshness(web):
