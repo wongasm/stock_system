@@ -6,6 +6,17 @@
     <div class="app-card login-card">
         <h2 class="login-title">Welcome Back</h2>
 
+        {% for category, message in get_flashed_messages(with_categories=true) %}
+        <div class="alert alert-{{ category }}" role="alert">{{ message }}</div>
+        {% endfor %}
+        {% if form.errors %}
+        <div class="alert alert-danger" role="alert">
+            {% for field, errors in form.errors.items() %}
+                {% for error in errors %}<div>{{ error }}</div>{% endfor %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
         <form method="POST">
             {{ form.hidden_tag() }}
 

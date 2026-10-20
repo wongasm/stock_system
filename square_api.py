@@ -304,12 +304,13 @@ def update_customer_profile(customer_id, given_name=None, family_name=None,
         return result
 
 
-def fetch_loyalty_summary(start_at, end_at, week_start=None, verbose=False):
+def fetch_loyalty_summary(start_at, end_at, week_start=None, verbose=False, accounts=None):
     """
     Summarise loyalty activity for a period.
 
     start_at / end_at : ISO-8601 'Z' strings bounding the loyalty EVENTS window.
     week_start        : a date; loyalty accounts created on/after it count as "new".
+    accounts          : optional saved member snapshot; avoids a full account scan.
 
     Returns a dict that never raises — {"ok": False, ...} on any problem.
     """
@@ -334,6 +335,8 @@ def fetch_loyalty_summary(start_at, end_at, week_start=None, verbose=False):
     try:
         # --- Program (for status + points terminology) --------------------
         prog = client.loyalty.retrieve_loyalty_program(program_id="main")
+        if not prog.is_success():
+            return result
         if prog.is_success():
             program = prog.body.get("program", {}) or {}
             result["program_status"] = program.get("status")
@@ -360,7 +363,7 @@ def fetch_loyalty_summary(start_at, end_at, week_start=None, verbose=False):
             if not events_res.is_success():
                 if verbose:
                     print("❌ Loyalty events error:", events_res.errors)
-                break
+                return result
 
             events = events_res.body.get("events", []) or events_res.body.get("loyalty_events", []) or []
             for ev in events:
@@ -380,6 +383,18 @@ def fetch_loyalty_summary(start_at, end_at, week_start=None, verbose=False):
             if not cursor:
                 break
 
+        # A background-refreshed snapshot is shared with the full loyalty report.
+        if accounts is not None:
+            result["total_members"] = len(accounts)
+            if week_start:
+                from zoneinfo import ZoneInfo
+                for account in accounts:
+                    created = _parse_iso(account.get("created_at"))
+                    if created and created.astimezone(ZoneInfo("Australia/Melbourne")).date() >= week_start:
+                        result["new_members"] += 1
+            result["ok"] = True
+            return result
+
         # --- Accounts (total members + new this week) ---------------------
         cursor = None
         while True:
@@ -391,7 +406,7 @@ def fetch_loyalty_summary(start_at, end_at, week_start=None, verbose=False):
             if not acc_res.is_success():
                 if verbose:
                     print("❌ Loyalty accounts error:", acc_res.errors)
-                break
+                return result
 
             accounts = acc_res.body.get("loyalty_accounts", []) or []
             result["total_members"] += len(accounts)

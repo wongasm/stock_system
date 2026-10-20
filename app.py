@@ -560,13 +560,20 @@ def ensure_api_cache_schema():
     """Widen the cache payload column to LONGTEXT (large member snapshots don't
     fit in the default TEXT/64KB, which silently breaks caching)."""
     try:
+        if db.engine.dialect.name != "mysql":
+            return
+        from sqlalchemy.dialects.mysql import LONGTEXT
+        columns = inspect(db.engine).get_columns("api_cache")
+        if any(column["name"] == "payload" and isinstance(column["type"], LONGTEXT) for column in columns):
+            return
         db.session.execute(text("ALTER TABLE api_cache MODIFY payload LONGTEXT NOT NULL"))
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
 
 
-from sales_reporting import register_sales_reporting
+from sales_reporting import register_sales_reporting, STORES as SALES_STORES, TZ as SALES_TZ
+from dashboard_data import saved_dashboard_sales
 
 # Create tables
 with app.app_context():
@@ -596,7 +603,10 @@ def cache_set(key, data):
 
         # Housekeeping: drop stale cache rows so the table can't grow forever
         cutoff = datetime.utcnow() - timedelta(hours=24)
-        ApiCache.query.filter(ApiCache.fetched_at < cutoff).delete()
+        ApiCache.query.filter(
+            ApiCache.fetched_at < cutoff,
+            ApiCache.cache_key != "dashboard_loyalty_v1",
+        ).delete()
         db.session.commit()
     except SQLAlchemyError:
         db.session.rollback()
@@ -623,12 +633,9 @@ def cache_read(key):
     return data, age
 
 
-DASHBOARD_STORES = ["Doncaster", "Lonsdale", "Clayton", "Glen Waverley"]
-
 # If the background refresher is running, the cache is always fresh. These are
 # safety nets: if the cache is older than this (refresher stopped), a page load
 # will do one live fetch to avoid serving very stale data.
-DASHBOARD_STALE_MAX = 1800          # 30 minutes
 LOYALTY_REPORT_STALE_MAX = 1800     # 30 minutes
 # Member scan is thousands of accounts (~30s). It changes slowly, so:
 #   - the background task refreshes it ~hourly (LOYALTY_ACCOUNTS_REFRESH)
@@ -1157,117 +1164,39 @@ def _utc_bounds(start_date, end_date):
     return start_utc, end_utc
 
 
-def build_dashboard_square():
-    """Do the (slow) Square work for the dashboard and return a JSON-safe dict.
-
-    Called on a cache miss by the dashboard route AND by the background
-    refresher, so the two never drift apart.
-    """
-    stores = DASHBOARD_STORES
-    today = datetime.utcnow().date()
-    week_start = today - timedelta(days=6)
-    current_monday = today - timedelta(days=today.weekday())
-
-    start_utc, end_utc = _utc_bounds(week_start.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
-    loyalty_start_utc, _ = _utc_bounds(current_monday.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
-
-    square_ok = True
-    today_revenue = 0.0
-    today_orders = 0
-    today_items = 0
-    store_today = {store: 0.0 for store in stores}
-    daily_revenue = {(week_start + timedelta(days=i)): 0.0 for i in range(7)}
-    top_items = defaultdict(int)
-
-    try:
-        for store in stores:
-            orders = fetch_sales_for_store(store, start_date=start_utc, end_date=end_utc)
-            for order in orders:
-                order_dt = parse_square_datetime(order.get("created_at"))
-                if not order_dt:
-                    continue
-                order_date = order_dt.date()
-                amount = (order.get("total_money", {}) or {}).get("amount", 0) / 100
-
-                if order_date in daily_revenue:
-                    daily_revenue[order_date] += amount
-
-                if order_date == today:
-                    today_revenue += amount
-                    today_orders += 1
-                    store_today[store] += amount
-                    for item in order.get("line_items", []) or []:
-                        try:
-                            qty = int(float(item.get("quantity", 0) or 0))
-                        except (ValueError, TypeError):
-                            qty = 0
-                        today_items += qty
-                        name = (item.get("name") or "").strip()
-                        if name:
-                            top_items[name] += qty
-    except Exception as exc:
-        square_ok = False
-        print("⚠️ Dashboard Square fetch failed:", exc)
-
-    avg_order_value = (today_revenue / today_orders) if today_orders else 0.0
-    store_sales_today = sorted(
-        [{"store": s, "revenue": round(store_today[s], 2)} for s in stores],
-        key=lambda x: x["revenue"], reverse=True
-    )
-    trend = [
-        {"label": d.strftime("%a"), "date": d.strftime("%d/%m"), "revenue": round(daily_revenue[d], 2)}
-        for d in sorted(daily_revenue.keys())
-    ]
-    top_sellers = sorted(
-        [{"name": name, "qty": qty} for name, qty in top_items.items()],
-        key=lambda x: x["qty"], reverse=True
-    )[:5]
-    loyalty = fetch_loyalty_summary(loyalty_start_utc, end_utc, week_start=current_monday)
-
-    return {
-        "square_ok": square_ok,
-        "today_revenue": round(today_revenue, 2),
-        "today_orders": today_orders,
-        "today_items": today_items,
-        "avg_order_value": round(avg_order_value, 2),
-        "store_sales_today": store_sales_today,
-        "trend": trend,
-        "top_sellers": top_sellers,
-        "loyalty": loyalty,
-    }
-
-
 def warm_caches():
-    """Recompute and store the expensive Square caches. Safe to call from a
-    scheduled/always-on task or on demand. Returns a short status dict."""
+    """Refresh loyalty outside page requests; sales already live in durable tables."""
     status = {"dashboard": False, "loyalty_report": False}
-
-    sq = build_dashboard_square()
-    cache_set("dashboard_square", sq)
-    status["dashboard"] = sq.get("square_ok", False)
-
-    # Member snapshot is the slowest part (thousands of accounts). It changes
-    # slowly, so only rescan when the cached snapshot is older than its window
-    # (get_loyalty_accounts handles that); most cycles reuse the cache.
-    accounts = get_loyalty_accounts(max_age=LOYALTY_ACCOUNTS_REFRESH) or None
-    status["loyalty_accounts"] = len(accounts) if accounts else 0
-
-    # Customer directory (for emails/names on the lapsed page) — same cadence.
-    status["customers"] = len(get_customer_directory(max_age=LOYALTY_ACCOUNTS_REFRESH))
-
-    # Pre-warm the loyalty dashboard's default view (this week, Mon -> today)
-    today = datetime.utcnow().date()
+    # One member scan per refresh window, reused by both loyalty summaries.
+    accounts = get_loyalty_accounts(max_age=LOYALTY_ACCOUNTS_REFRESH)
+    snapshot, _ = cache_read("loyalty_accounts_v4")
+    status["loyalty_accounts"] = len(accounts)
+    now = datetime.now(SALES_TZ)
+    today = now.date()
     monday = today - timedelta(days=today.weekday())
-    start_at, end_at = _utc_bounds(monday.strftime("%Y-%m-%d"), today.strftime("%Y-%m-%d"))
-    report = fetch_loyalty_report(start_at, end_at, monday, today, accounts=accounts)
-    if report.get("ok"):
-        cache_key = f"loyalty_report_v3:{monday.strftime('%Y-%m-%d')}:{today.strftime('%Y-%m-%d')}"
-        cache_set(cache_key, report)
-        status["loyalty_report"] = True
-
+    start_at = datetime.combine(monday, datetime.min.time(), tzinfo=SALES_TZ).astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    end_at = now.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    if snapshot and snapshot.get("ok"):
+        loyalty = fetch_loyalty_summary(start_at, end_at, week_start=monday, accounts=accounts)
+        if loyalty.get("ok"):
+            cache_set("dashboard_loyalty_v1", {
+                "week_start": monday.isoformat(), "loyalty": loyalty,
+            })
+            status["dashboard"] = True
+        # Keep the separate loyalty-report page's existing UTC date convention.
+        report_today = datetime.utcnow().date()
+        report_monday = report_today - timedelta(days=report_today.weekday())
+        report_start, report_end = _utc_bounds(report_monday.isoformat(), report_today.isoformat())
+        report = fetch_loyalty_report(report_start, report_end, report_monday, report_today, accounts=accounts)
+        if report.get("ok"):
+            cache_key = f"loyalty_report_v3:{report_monday.isoformat()}:{report_today.isoformat()}"
+            cache_set(cache_key, report)
+            status["loyalty_report"] = True
+    status["customers"] = len(get_customer_directory(max_age=LOYALTY_ACCOUNTS_REFRESH))
     return status
 
 
+@app.route("/dashboard/summary", methods=["GET"], endpoint="dashboard_summary")
 @app.route("/dashboard", methods=["GET"])
 @login_required
 def dashboard():
@@ -1275,30 +1204,17 @@ def dashboard():
     if current_user.role != "admin":
         return redirect(url_for("blank_page"))
 
-    today = datetime.utcnow().date()
+    # Page loads (including old ?refresh=1 URLs) only read saved data.
+    sales = saved_dashboard_sales()
+    today = sales["today"]
     current_monday = today - timedelta(days=today.weekday())
-
-    # ---- Square data: served instantly from the (background-warmed) cache ---
-    # Only do a live fetch when there's nothing cached, when it's very stale
-    # (background refresher not running), or when the user hits Refresh.
-    force_refresh = request.args.get("refresh") == "1"
-    sq, age = cache_read("dashboard_square")
-    if force_refresh or sq is None or age is None or age > DASHBOARD_STALE_MAX:
-        sq = build_dashboard_square()
-        cache_set("dashboard_square", sq)
-        age = 0
-    data_age_seconds = age
-
-    # Unpack cached (or freshly built) Square data
-    square_ok = sq["square_ok"]
-    today_revenue = sq["today_revenue"]
-    today_orders = sq["today_orders"]
-    today_items = sq["today_items"]
-    avg_order_value = sq["avg_order_value"]
-    store_sales_today = sq["store_sales_today"]
-    trend = sq["trend"]
-    top_sellers = sq["top_sellers"]
-    loyalty = sq["loyalty"]
+    session.setdefault("sales_csrf", secrets.token_hex(32))
+    loyalty_snapshot, loyalty_age = cache_read("dashboard_loyalty_v1")
+    loyalty = (loyalty_snapshot or {}).get("loyalty") or {"ok": False}
+    loyalty_week = (loyalty_snapshot or {}).get("week_start")
+    loyalty_current_week = loyalty_week == current_monday.isoformat()
+    store_sales_today = sales["store_sales_today"]
+    trend = sales["trend"]
     max_store_rev = max((row["revenue"] for row in store_sales_today), default=0) or 1
     max_trend_rev = max((row["revenue"] for row in trend), default=0) or 1
 
@@ -1306,8 +1222,8 @@ def dashboard():
     ingredients = Ingredient.query.filter(Ingredient.is_archived == False).all()
 
     total_stock_value = sum(
-        Decimal(str(i.quantity or 0)) * Decimal(str(i.price_per_unit or 0))
-        for i in ingredients
+        (Decimal(str(i.quantity or 0)) * Decimal(str(i.price_per_unit or 0))
+         for i in ingredients), Decimal("0")
     )
 
     low_stock_items = []
@@ -1319,29 +1235,33 @@ def dashboard():
             low_stock_items.append({"name": i.name, "need": deficit, "supplier": i.supplier})
     low_stock_items.sort(key=lambda x: x["need"], reverse=True)
 
-    unpaid_records = StockOutRecord.query.filter_by(paid=False).all()
-    unpaid_ex_gst = sum(
-        Decimal(str(r.selling_price or 0)) * Decimal(str(r.quantity or 0))
-        for r in unpaid_records
-    )
-    unpaid_inc_gst = (unpaid_ex_gst * Decimal("1.10")).quantize(Decimal("0.01"))
-    unpaid_invoice_count = len({r.invoice_no for r in unpaid_records})
+    unpaid_ex_gst, unpaid_invoice_count = db.session.query(
+        cast(func.coalesce(func.sum(StockOutRecord.selling_price * StockOutRecord.quantity), 0), Numeric(30, 4)),
+        func.count(func.distinct(StockOutRecord.invoice_no)),
+    ).filter(StockOutRecord.paid == False).one()
+    unpaid_inc_gst = (Decimal(str(unpaid_ex_gst)) * Decimal("1.10")).quantize(Decimal("0.01"))
 
     # ---- Central Kitchen weekly invoiced totals (last 6 weeks, inc GST) ---
     WEEKS = 6
     week_starts = [current_monday - timedelta(weeks=(WEEKS - 1 - i)) for i in range(WEEKS)]
     earliest_str = week_starts[0].strftime("%Y-%m-%d")
 
-    ck_records = StockOutRecord.query.filter(StockOutRecord.date >= earliest_str).all()
+    ck_records = db.session.query(
+        StockOutRecord.date,
+        cast(func.coalesce(func.sum(StockOutRecord.selling_price * StockOutRecord.quantity), 0), Numeric(30, 4)),
+    ).filter(
+        StockOutRecord.date >= earliest_str,
+        StockOutRecord.date < (current_monday + timedelta(days=7)).isoformat(),
+    ).group_by(StockOutRecord.date).all()
     ck_totals = {ws: Decimal("0") for ws in week_starts}
-    for r in ck_records:
+    for saved_date, total in ck_records:
         try:
-            record_date = datetime.strptime(str(r.date), "%Y-%m-%d").date()
+            record_date = datetime.strptime(str(saved_date), "%Y-%m-%d").date()
         except (ValueError, TypeError):
             continue
         week_key = record_date - timedelta(days=record_date.weekday())
         if week_key in ck_totals:
-            ck_totals[week_key] += Decimal(str(r.selling_price or 0)) * Decimal(str(r.quantity or 0))
+            ck_totals[week_key] += Decimal(str(total))
 
     ck_weeks = []
     for ws in week_starts:
@@ -1357,20 +1277,15 @@ def dashboard():
         w["pct"] = round(w["total"] / max_ck * 100, 1)
     ck_this_week = ck_weeks[-1]["total"] if ck_weeks else 0.0
 
+    template = "dashboard_content.html" if request.endpoint == "dashboard_summary" else "dashboard.html"
     return render_template(
-        "dashboard.html",
-        square_ok=square_ok,
+        template,
+        **{key: value for key, value in sales.items() if key != "today"},
         today=today.strftime("%A, %d %B %Y"),
-        data_age_seconds=data_age_seconds,
-        today_revenue=round(today_revenue, 2),
-        today_orders=today_orders,
-        today_items=today_items,
-        avg_order_value=round(avg_order_value, 2),
-        store_sales_today=store_sales_today,
+        csrf=session["sales_csrf"],
+        dashboard_stores=SALES_STORES,
         max_store_rev=max_store_rev,
-        trend=trend,
         max_trend_rev=max_trend_rev,
-        top_sellers=top_sellers,
         total_stock_value=total_stock_value.quantize(Decimal("0.01")),
         low_stock_items=low_stock_items,
         low_stock_count=len(low_stock_items),
@@ -1378,8 +1293,11 @@ def dashboard():
         unpaid_invoice_count=unpaid_invoice_count,
         ck_weeks=ck_weeks,
         ck_this_week=ck_this_week,
-        loyalty=loyalty
-    )
+        loyalty=loyalty,
+        loyalty_age_seconds=loyalty_age,
+        loyalty_week=loyalty_week,
+        loyalty_current_week=loyalty_current_week,
+    ), 200, {"Cache-Control": "no-store"}
 
 @app.route("/loyalty_dashboard", methods=["GET"])
 @login_required

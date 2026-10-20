@@ -109,3 +109,64 @@ full calculation on demand.
 Deploy `sales_reporting.py`, `templates/sales_report.html`, and all four new
 `sales_report_{macros,details,history,coverage}.html` templates together, then
 reload the PythonAnywhere web app. Existing scheduled sync jobs remain unchanged.
+
+## Dashboard saved-data loading (October 20, 2026)
+
+The dashboard now reads `sales_report_order` and `sales_report_line` directly.
+These are the same durable tables used by Sales Report, so existing history is
+reused without a new import or schema migration. Today and the seven-day trend
+use Melbourne business dates. Only today's product totals and any legacy OPEN
+orders without projected lines are read for the item count and top sellers.
+The initial dashboard, its summary endpoint, and the admin login redirect never
+call Square, even when data is missing, old, or the URL contains `refresh=1`.
+
+After the saved page is displayed, JavaScript updates stores whose sync
+checkpoint is at least five minutes old. **Update sales** explicitly checks all
+stores. Both use the existing administrator-only, CSRF-protected sales sync
+endpoint. Each request saves one page, retains its cursor, and continues from
+the last successful UPDATED_AT checkpoint with the existing one-hour overlap.
+This catches changes/cancellations to older orders as well as new orders and
+does not double count. Page updates are limited to three rounds and stop
+starting new batches after 45 seconds; an in-flight request has a 60-second
+browser deadline. Larger backlogs resume with another click, in Sales Report,
+or in the scheduled job. Completed rounds replace the dashboard figures from
+the database without reloading the page. Failures retain the displayed figures,
+and expired login sessions offer a sign-in link.
+
+Sales sync status and incomplete first imports are visible. A database with no
+saved sales or completed checkpoint shows dashes rather than asserting zero
+sales. Stock and invoice figures still read the local database; invoice totals
+are now aggregated in SQL rather than loading every matching invoice line.
+
+The scheduled `refresh_cache.py` job gives each store one batch per round, up to
+ten rounds, before refreshing loyalty. Dashboard loyalty has its own last-good
+snapshot at `api_cache.dashboard_loyalty_v1`; page views only read it. The warmer
+reuses the member snapshot for both loyalty summaries instead of scanning every
+member twice. Failed summaries do not overwrite the last good result. This one
+dashboard snapshot is excluded from the existing 24-hour cache cleanup, and an
+older week's figures are explicitly labeled with their week. Loyalty events
+remain a periodic weekly snapshot, not an incremental event ledger.
+
+Login now displays invalid credentials and form/CSRF validation errors. Startup
+checks the MySQL cache column type before ALTER TABLE, avoiding repeated ALTERs
+when the payload is already LONGTEXT. Authentication duration is unchanged.
+
+Deploy `app.py`, `dashboard_data.py`, `square_api.py`, `refresh_cache.py`,
+`templates/dashboard.html`, `templates/dashboard_content.html`,
+`templates/login.html`, and `static/dashboard.js` together, then reload the
+PythonAnywhere web app. From the deployed project with its virtualenv active,
+run `python refresh_cache.py` once to seed the separate loyalty snapshot. Keep
+the existing scheduled/always-on job running; an always-on command is
+`python refresh_cache.py --loop 300`. Avoid creating a duplicate job if one
+already exists. Sales can also update while the dashboard is open; loyalty
+refresh depends on the background job. No Square history rebuild is needed.
+
+Validation: run `python -m pytest -q test_dashboard.py test_sales_reporting.py`.
+Tests cover cold/stale/forced page reads without external calls, four bounded
+sales queries, Melbourne date boundaries, OPEN legacy lines, incremental updates
+and cancellations, authentication/CSRF, visible login errors, invoice totals,
+last-good loyalty retention, member snapshot reuse, store sync fairness, and
+conditional schema widening. Browser checks with synthetic sales verified
+login, automatic refresh failure, successful retry without navigation, old
+refresh URLs, and expired-session recovery. Production timings and background
+job status still need verification after deployment.

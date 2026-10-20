@@ -1,9 +1,8 @@
 """
-Background cache warmer for the dashboard.
+Background sales sync and loyalty cache warmer.
 
-Recomputes the expensive Square data (today's sales, trends, loyalty) and stores
-it in the api_cache table, so a real login always reads pre-warmed data and
-never waits on the Square API.
+Saves new/changed Square orders to the durable sales report tables and loyalty
+snapshots to api_cache. Dashboard page loads read these saved records only.
 
 Usage on PythonAnywhere:
 
@@ -23,14 +22,19 @@ from sales_reporting import STORES, sync_step
 def run_once():
     with app.app_context():
         # Bounded batches resume automatically on the next scheduled invocation.
-        for store in STORES:
-            try:
-                for _ in range(10):
+        pending = list(STORES)
+        for _ in range(10):
+            next_round = []
+            for store in pending:
+                try:
                     progress = sync_step(store)
-                    if progress.get('busy') or not progress.get('more'):
-                        break
-            except ValueError as exc:
-                print(f"Sales sync {store}: {exc}")
+                    if progress.get('more') and not progress.get('busy'):
+                        next_round.append(store)
+                except ValueError as exc:
+                    print(f"Sales sync {store}: {exc}")
+            pending = next_round
+            if not pending:
+                break
         status = warm_caches()
         print("✅ Cache warmed:", status)
     return status
