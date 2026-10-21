@@ -9,3 +9,6 @@ __pycache__/
 # mac
 .DS_Store
 .env
+
+.omnisend-new-import.json
+.omnisend-new-import.tmp

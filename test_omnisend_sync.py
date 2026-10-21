@@ -149,3 +149,59 @@ def test_square_failure_prevents_stale_upload(monkeypatch):
         fetch_customer_directory=lambda:{'ok':True,'customers':{}}))
     with pytest.raises(ValueError,match='Square refresh failed'):
         load_fresh_profiles()
+
+
+@pytest.mark.parametrize('status', ['subscribed', 'unsubscribed', 'nonSubscribed'])
+def test_new_only_never_writes_existing(profile, status):
+    client = Client({'id': 'one', '_email_status': status})
+    result = sync_profiles([profile], client, apply=True, new_only=True)
+    assert sum(result.values()) == 1
+    assert not client.writes
+
+
+def test_new_import_resumes_and_rechecks_ambiguous_write(profile, tmp_path):
+    from omnisend_sync import import_new_profiles, SyncError
+    second = deepcopy(profile)
+    second['email'] = 'b@example.com'
+    second['customProperties']['bc_square_customer_id'] = 'customer-b'
+    class Interrupted(Client):
+        def __init__(self):
+            super().__init__()
+            self.lookups = []
+        def lookup(self, email):
+            self.lookups.append(email)
+            return None
+        def request(self, *args, **kwargs):
+            if len(self.writes) == 1:
+                raise SyncError('Network interruption')
+            return super().request(*args, **kwargs)
+    path = tmp_path / 'progress.json'
+    first = Interrupted()
+    with pytest.raises(SyncError):
+        import_new_profiles([profile, second], first, path, apply=True)
+    assert profile['email'] not in path.read_text()
+    class Resumed(Client):
+        def lookup(self, email):
+            assert email == second['email']
+            return {'id': 'two', '_email_status': 'subscribed'}
+    resumed = Resumed()
+    result = import_new_profiles([profile, second], resumed, path, apply=True)
+    assert result == {'skipped_already_processed': 1, 'skipped_existing': 1}
+    assert not resumed.writes and not path.exists()
+
+
+def test_new_import_preview_does_not_checkpoint(profile, tmp_path):
+    from omnisend_sync import import_new_profiles
+    path = tmp_path / 'progress.json'
+    client = Client()
+    assert import_new_profiles([profile], client, path) == {'would_create': 1}
+    assert not path.exists() and not client.writes
+
+
+def test_new_import_creates_and_finishes(profile, tmp_path):
+    from omnisend_sync import import_new_profiles
+    path = tmp_path / 'progress.json'
+    client = Client()
+    assert import_new_profiles([profile], client, path, apply=True) == {'created': 1}
+    assert client.writes[0][0] == ('POST',)
+    assert not path.exists()

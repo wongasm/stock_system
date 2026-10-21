@@ -74,3 +74,25 @@ python omnisend_sync.py --apply --automations-paused --limit 5
 Omit `--apply` for a read-only Omnisend preview (Square snapshots are refreshed locally). After inspecting the imported profiles, remove `--limit 5` to process the full list. Existing subscribed contacts receive profile updates only; existing unsubscribed, nonSubscribed or unknown-status contacts are skipped. Existing identity conflicts are also skipped. New contacts are registered as email subscribers on the basis of the owner's confirmation. Their statusChangedAt describes the import's subscription registration, not their original opt-in date. Do not run another contact-import process concurrently. Existing contact updates never send channel fields, and newly registered statuses use the run-start timestamp so a newer unsubscribe takes precedence.
 
 The command is deliberately manual for this initial setup. Contact changes can trigger enabled workflows even without event calls, which is why `--apply` requires `--automations-paused`. Keep workflows paused on retries too. It makes no automatic retries after failed/ambiguous writes; previously saved updates remain. A rerun looks up each email again before writing. Counts are logged without contact details or API credentials. Marketing enrollment, purchase linkage, actual-send tracking and background scheduling remain future integration work. Twenty-seven tests pass against simulated API responses; the live write check must run in the configured server environment.
+
+## Import new members without rewriting existing contacts
+
+Keep all Omnisend workflows in draft/disabled during this manual import:
+
+```bash
+python -u omnisend_sync.py --new-only --apply --automations-paused
+```
+
+This still refreshes Square and checks each eligible email on its first pass,
+but writes only missing contacts. Existing contacts (including unsubscribed or
+conflicting identities) are never modified by this mode. The hourly points task
+is unchanged. Progress is saved after each confirmed result in the git-ignored
+`.omnisend-new-import.json`; rerun the same command after an interruption to
+skip completed profiles. The failed profile is looked up again before any write.
+A completed run clears the checkpoint so future new-member imports check afresh.
+The earlier full-import command did not save checkpoints; its progress cannot
+be resumed directly. Previously created contacts will be found and skipped.
+Omit `--apply` for a preview, which does not use or alter the checkpoint.
+`--new-only` cannot be combined with `--scheduled` or `--limit`.
+Errors from Omnisend now report a locally generated reason (including HTTP
+status), without printing response bodies, emails or credentials.

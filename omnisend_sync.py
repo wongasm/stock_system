@@ -5,6 +5,7 @@ import fcntl
 from collections import Counter
 from datetime import datetime, timezone
 import json
+import hashlib
 import os
 from pathlib import Path
 import re
@@ -46,10 +47,14 @@ def prepare_profiles(accounts, customers):
     return profiles, dict(counts)
 
 
+class SyncError(ValueError):
+    """Locally authored error text safe to include in task logs."""
+
+
 class OmnisendClient:
     def __init__(self, key):
         if not key:
-            raise ValueError('OMNISEND_API_KEY is missing.')
+            raise SyncError('OMNISEND_API_KEY is missing.')
         self.key = key
 
     def request(self, method, path='', **kwargs):
@@ -60,32 +65,32 @@ class OmnisendClient:
                          'Omnisend-Version':'2026-03-15'},
                 timeout=(10,30), allow_redirects=False, **kwargs)
         except requests.RequestException:
-            raise ValueError('Network interruption. The last write outcome may be unknown; no automatic retry was made.') from None
+            raise SyncError('Network interruption. The last write outcome may be unknown; no automatic retry was made.') from None
         if result.status_code not in (200,201):
-            raise ValueError('Omnisend HTTP %s. Stopped; previously completed updates remain saved.' % result.status_code)
+            raise SyncError('Omnisend HTTP %s. Stopped; previously completed updates remain saved.' % result.status_code)
         try:
             body = result.json()
         except ValueError:
-            raise ValueError('Unexpected Omnisend response. Stopped without retrying.') from None
+            raise SyncError('Unexpected Omnisend response. Stopped without retrying.') from None
         return result.status_code, body
 
     def lookup(self, email):
         _, result = self.request('GET', params={'email':email,'limit':2})
         contacts = result.get('contacts')
         if not isinstance(contacts,list) or len(contacts)>1:
-            raise ValueError('Unexpected or ambiguous contact lookup. No write made for this profile.')
+            raise SyncError('Unexpected or ambiguous contact lookup. No write made for this profile.')
         if not contacts:
             return None
         contact=contacts[0]
         emails=[i for i in contact.get('identifiers',[]) if i.get('type')=='email'
                 and i.get('id','').lower()==email]
         if len(emails)!=1 or not contact.get('id'):
-            raise ValueError('Contact identity could not be verified. No write made for this profile.')
+            raise SyncError('Contact identity could not be verified. No write made for this profile.')
         contact['_email_status']=emails[0].get('channels',{}).get('email',{}).get('status')
         return contact
 
 
-def sync_profiles(profiles, client, apply=False, scheduled=False):
+def sync_profiles(profiles, client, apply=False, scheduled=False, new_only=False):
     counts=Counter()
     # Timestamp denotes this import's subscription registration, not the original
     # customer opt-in date. Never fabricate a consent.createdAt field.
@@ -100,6 +105,9 @@ def sync_profiles(profiles, client, apply=False, scheduled=False):
             if previous and previous!=profile['customProperties']['bc_square_customer_id']:
                 counts['skipped_identity_conflict']+=1
                 continue
+        if new_only and existing:
+            counts['skipped_existing']+=1
+            continue
         if scheduled:
             if not existing:
                 counts['skipped_not_imported']+=1
@@ -139,6 +147,42 @@ def sync_profiles(profiles, client, apply=False, scheduled=False):
             counts['created' if status==201 else 'upserted']+=1
         if sum(counts.values())%50==0:
             print(json.dumps(dict(counts)),flush=True)
+    return dict(counts)
+
+
+def import_new_profiles(profiles, client, checkpoint_path, apply=False):
+    """Resume an interrupted new-only import; retain no plain-text contact data."""
+    path = Path(checkpoint_path)
+    done = set()
+    if apply and path.exists():
+        try:
+            saved = json.loads(path.read_text())
+            if not isinstance(saved, list) or not all(isinstance(x, str) for x in saved):
+                raise ValueError()
+            done = set(saved)
+        except (ValueError, OSError):
+            raise SyncError('Import checkpoint could not be read. No contacts processed.') from None
+    counts = Counter()
+    for profile in profiles:
+        identity = [profile['email'].lower(),
+                    profile['customProperties'].get('bc_square_customer_id'),
+                    profile['customProperties'].get('bc_loyalty_account_id')]
+        key = hashlib.sha256(json.dumps(identity).encode()).hexdigest()
+        if key in done:
+            counts['skipped_already_processed'] += 1
+        else:
+            counts.update(sync_profiles([profile], client, apply=apply, new_only=True))
+            if apply:
+                # Mark only after a confirmed result. An ambiguous write is looked
+                # up again on the next run, never blindly repeated.
+                done.add(key)
+                temp = path.with_suffix('.tmp')
+                temp.write_text(json.dumps(sorted(done)))
+                temp.replace(path)
+        if sum(counts.values()) % 50 == 0:
+            print(json.dumps(dict(counts)), flush=True)
+    if apply and path.exists():
+        path.unlink()  # Completed campaign: next import starts a fresh check.
     return dict(counts)
 
 
@@ -182,9 +226,12 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply',action='store_true',help='Write profiles. Default is read-only preview.')
     parser.add_argument('--automations-paused',action='store_true',help='Confirm all Omnisend workflows are disabled for this import.')
+    parser.add_argument('--new-only', action='store_true', help='Import missing customers only; resume interrupted live imports.')
     parser.add_argument('--scheduled',action='store_true',help='Update changed points only for existing linked subscribers. Enabled segment workflows may trigger.')
     parser.add_argument('--limit',type=int,default=None,help='Optional limit for a small initial test.')
     args=parser.parse_args()
+    if args.new_only and (args.scheduled or args.limit is not None):
+        parser.error('--new-only cannot be combined with --scheduled or --limit')
     if args.apply and not (args.automations_paused or args.scheduled):
         parser.error('Disable Omnisend automations first, then pass --automations-paused. Contact changes can trigger emails.')
     if args.limit is not None and args.limit<1:
@@ -199,9 +246,16 @@ def main():
             print('Refreshing Square loyalty and customer snapshots…',flush=True)
             profiles,counts=load_fresh_profiles()
             print(json.dumps(counts,indent=2),flush=True)
-            result=sync_profiles(profiles[:args.limit],client,args.apply,scheduled=args.scheduled)
+            if args.new_only:
+                result=import_new_profiles(profiles, client,
+                    Path(__file__).with_name('.omnisend-new-import.json'), apply=args.apply)
+            else:
+                result=sync_profiles(profiles[:args.limit],client,args.apply,scheduled=args.scheduled)
             log_status('finished', counts=result)
             print('Profile sync finished. No custom events sent.' if args.apply else 'Preview finished. No Omnisend contacts changed.')
+    except SyncError as exc:
+        log_status('failed', error_type=type(exc).__name__, reason=str(exc))
+        return 1
     except ValueError as exc:
         # Log the exception class rather than arbitrary upstream response text,
         # which could include contact data or credentials.
