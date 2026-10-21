@@ -556,6 +556,7 @@ def fetch_loyalty_accounts(verbose=False):
     result = {"ok": False, "accounts": []}
     token = _first_loyalty_token()
     if not token:
+        result["error_code"] = "MISSING_TOKEN"
         return result
 
     client = Client(access_token=token, environment="production")
@@ -568,6 +569,8 @@ def fetch_loyalty_accounts(verbose=False):
                 body["cursor"] = cursor
             res = client.loyalty.search_loyalty_accounts(body=body)
             if not res.is_success():
+                status = getattr(res, "status_code", None)
+                result["error_code"] = "HTTP_%s" % status if isinstance(status, int) and 100 <= status <= 599 else "API_ERROR"
                 if verbose:
                     print("❌ Loyalty accounts error:", res.errors)
                 return result
@@ -579,6 +582,7 @@ def fetch_loyalty_accounts(verbose=False):
         result["accounts"] = accounts
         result["ok"] = True
     except Exception as exc:
+        result["error_code"] = "NETWORK_ERROR" if type(exc).__name__ in {"Timeout", "ReadTimeout", "ConnectTimeout", "ConnectionError"} else "SDK_ERROR"
         if verbose:
             print("❌ Exception snapshotting loyalty accounts:", exc)
     return result
@@ -592,6 +596,7 @@ def fetch_customer_directory(verbose=False):
     result = {"ok": False, "customers": {}}
     token = _first_loyalty_token()
     if not token:
+        result["error_code"] = "MISSING_TOKEN"
         return result
 
     client = Client(access_token=token, environment="production")
@@ -601,6 +606,8 @@ def fetch_customer_directory(verbose=False):
         while True:
             res = client.customers.list_customers(cursor=cursor, limit=100)
             if not res.is_success():
+                status = getattr(res, "status_code", None)
+                result["error_code"] = "HTTP_%s" % status if isinstance(status, int) and 100 <= status <= 599 else "API_ERROR"
                 if verbose:
                     print("❌ Customers list error:", res.errors)
                 return result
@@ -615,6 +622,7 @@ def fetch_customer_directory(verbose=False):
         result["customers"] = customers
         result["ok"] = True
     except Exception as exc:
+        result["error_code"] = "NETWORK_ERROR" if type(exc).__name__ in {"Timeout", "ReadTimeout", "ConnectTimeout", "ConnectionError"} else "SDK_ERROR"
         if verbose:
             print("❌ Exception building customer directory:", exc)
     return result

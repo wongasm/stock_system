@@ -205,3 +205,41 @@ def test_new_import_creates_and_finishes(profile, tmp_path):
     assert import_new_profiles([profile], client, path, apply=True) == {'created': 1}
     assert client.writes[0][0] == ('POST',)
     assert not path.exists()
+
+
+@pytest.mark.parametrize('code, expected', [('HTTP_429','HTTP_429'), ('secret@example.com','UNKNOWN')])
+def test_refresh_failure_reports_safe_stage_and_stops(monkeypatch, code, expected):
+    import sys
+    import types
+    from contextlib import nullcontext
+    from omnisend_sync import load_fresh_profiles, SyncError
+    monkeypatch.setitem(sys.modules, 'app', types.SimpleNamespace(
+        app=types.SimpleNamespace(app_context=lambda: nullcontext()),
+        cache_set=lambda *a: pytest.fail('must not save failed refresh')))
+    monkeypatch.setitem(sys.modules, 'square_api', types.SimpleNamespace(
+        fetch_loyalty_accounts=lambda: {'ok': False, 'error_code': code},
+        fetch_customer_directory=lambda: pytest.fail('must stop at failed stage')))
+    with pytest.raises(SyncError, match=r'loyalty_accounts \(' + expected + r'\)'):
+        load_fresh_profiles()
+
+
+def test_square_fetch_returns_http_status_without_response_details(monkeypatch):
+    import importlib.util
+    import sys
+    import types
+    from pathlib import Path
+    response = types.SimpleNamespace(is_success=lambda: False, status_code=429,
+                                     errors=[{'detail': 'private@example.com'}])
+    endpoint = types.SimpleNamespace(search_loyalty_accounts=lambda **kw: response,
+                                     list_customers=lambda **kw: response)
+    monkeypatch.setitem(sys.modules, 'square', types.ModuleType('square'))
+    monkeypatch.setitem(sys.modules, 'square.client', types.SimpleNamespace(
+        Client=lambda **kw: types.SimpleNamespace(loyalty=endpoint, customers=endpoint)))
+    spec = importlib.util.spec_from_file_location('square_diagnostic_test', Path(__file__).with_name('square_api.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(module, '_first_loyalty_token', lambda: 'test')
+    for fetch in [module.fetch_loyalty_accounts, module.fetch_customer_directory]:
+        result = fetch()
+        assert result['ok'] is False and result['error_code'] == 'HTTP_429'
+        assert 'private@example.com' not in str(result)

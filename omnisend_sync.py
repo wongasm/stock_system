@@ -190,10 +190,20 @@ def load_fresh_profiles():
     from app import app, cache_set
     from square_api import fetch_loyalty_accounts, fetch_customer_directory
     with app.app_context():
-        accounts=fetch_loyalty_accounts()
-        customers=fetch_customer_directory()
-        if not accounts.get('ok') or not customers.get('ok'):
-            raise ValueError('Square refresh failed. No stale snapshot will be uploaded.')
+        snapshots = []
+        for stage, fetch in [('loyalty_accounts', fetch_loyalty_accounts),
+                             ('customer_directory', fetch_customer_directory)]:
+            log_status('refreshing_square', stage=stage)
+            snapshot = fetch()
+            if not snapshot.get('ok'):
+                code = snapshot.get('error_code', 'UNKNOWN')
+                # Only locally defined categories/HTTP status codes reach logs.
+                if not isinstance(code, str) or not re.fullmatch(
+                        r'(?:HTTP_[1-5][0-9]{2}|MISSING_TOKEN|API_ERROR|NETWORK_ERROR|SDK_ERROR)', code):
+                    code = 'UNKNOWN'
+                raise SyncError('Square refresh failed: %s (%s). No Omnisend contacts changed by this run.' % (stage, code))
+            snapshots.append(snapshot)
+        accounts, customers = snapshots
         cache_set('loyalty_accounts_v4', accounts)
         cache_set('customer_directory_v1', customers)
         return prepare_profiles(accounts['accounts'], customers['customers'])
