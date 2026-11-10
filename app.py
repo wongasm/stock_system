@@ -51,6 +51,8 @@ def redact_database_uri(uri):
 app = Flask(__name__)
 app.config["SECRET_KEY"] = required_env("SECRET_KEY", "FLASK_SECRET_KEY")
 app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=90)
+app.config["SESSION_REFRESH_EACH_REQUEST"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "true").lower() not in {"0", "false", "no"}
 
@@ -3264,6 +3266,8 @@ def login():
         user = User.query.filter_by(username=form.username.data).first()
         if user and user.check_password(form.password.data):
             login_user(user)
+            # Match Luum's rolling 90-day login and survive browser restarts.
+            session.permanent = True
             if user.role == 'admin':
                 return redirect(url_for('dashboard'))  # Full access
             else:
